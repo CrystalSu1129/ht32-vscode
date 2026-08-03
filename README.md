@@ -208,7 +208,7 @@ MyProject/                 ← user-named project folder
 
 To add a second project, run **Create Project** again and select the **same parent folder** as the existing project. When prompted, select **Yes** to merge into the existing `.ht32vs` project file. Each project is fully self-contained under its own `<projectName>/` folder. Projects located in different folders cannot be merged.
 
-> **Workspace Trust** — If VS Code opens the folder in Restricted Mode, the extension will show a notification: *"This workspace is in Restricted Mode. Please trust the workspace to enable all features."* Click **Trust Workspace** to enable build and debug.
+> **Workspace Trust** — If VS Code opens the folder in Restricted Mode, VS Code will show a notification: *"You are in Restricted Mode"* Click **Trust** to enable build and debug.
 
 <img src="media/22.jpg" width="400" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -445,21 +445,23 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 
 | Setting | Options |
 |---------|---------|
-| Debug Interface | `CMSIS-DAP` (e-Link32) / `J-Link` / `ST-Link` |
 | **Debug Server** | **`PyOCD`** (default) / `OpenOCD` |
+| Debug Interface | `CMSIS-DAP` (e-Link32) / `J-Link` / `ST-Link` |
 | Adapter Serial | Specify probe serial (blank = auto) |
 | Adapter Speed | Transfer rate in kHz (blank = interface default) |
-| OpenOCD Debug Level | 0 = off / 1–3 = increasing verbosity |
+| OpenOCD Debug Level | 1–4 = increasing verbosity (default 1) |
+| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; disable if EXT flash read-back is unreliable |
 | DFP Path | Custom DFP path for SVD auto-detection |
 | SVD File | Peripheral register SVD file (blank = auto-detect) |
 | Erase Mode | `erase_sector` (default) / `erase_chip` / `none` |
-| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; disable if EXT flash read-back is unreliable |
 | Flash Loaders | Add external flash loaders (e.g. SPI Flash) |
 
+<img src="media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-<img src="media/17.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-> **J-Link + OpenOCD on Windows:** Requires WinUSB driver installed via [Zadig](https://zadig.akeo.ie/) (Options → List All Devices → select J-Link → WinUSB → Replace Driver). After switching to WinUSB, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; restore by reinstalling SEGGER J-Link Software. **J-Link + pyOCD does not require driver changes.**
+> **J-Link + OpenOCD on Windows:** Requires WinUSB driver installed via [Zadig](https://zadig.akeo.ie/) . After switching to WinUSB, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; restore by reinstalling SEGGER J-Link Software. 
+
+> **J-Link + pyOCD does not require driver changes.**
 
 ---
 

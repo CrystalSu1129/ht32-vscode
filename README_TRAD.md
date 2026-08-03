@@ -209,7 +209,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 若要新增第二個專案，再次執行 **Create Project** 並選擇與現有專案**相同的上層資料夾**，在詢問時選擇 **Yes** 合併至現有的 `.ht32vs` 專案檔。每個專案完全獨立，放在各自的 `<projectName>/` 資料夾內。不同資料夾下的專案無法合併。
 
 **NOTE:**
-**工作區信任** — 若 VS Code 以受限模式開啟資料夾，擴充功能將顯示通知：*「This workspace is in Restricted Mode. Please trust the workspace to enable all features.」*，請點選 **Trust Workspace** 以啟用編譯與除錯功能。
+**工作區信任** — 若 VS Code 以受限模式開啟資料夾，將顯示通知：*「You are in Restricted Mode」*，請點選 **Trust** 以啟用編譯與除錯功能。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/22.jpg" width="400" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -447,21 +447,23 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 
 | 設定項目 | 說明 |
 |----------|------|
-| Debug Interface | `CMSIS-DAP`（e-Link32）/ `J-Link` / `ST-Link` |
 | **Debug Server** | **`PyOCD`**（預設）/ `OpenOCD` |
+| Debug Interface | `CMSIS-DAP`（e-Link32）/ `J-Link` / `ST-Link` |
 | Adapter Serial | 指定除錯器序號（空白 = 自動） |
 | Adapter Speed | 傳輸速率 kHz（空白 = 介面預設） |
-| OpenOCD Debug Level | 0=關閉 / 1~3 逐漸詳細 |
+| OpenOCD Debug Level | 1~4 逐漸詳細（預設 1）|
 | DFP Path | 自訂 DFP 路徑 |
 | SVD File | 周邊暫存器 SVD 檔案（空白 = 自動偵測） |
 | Erase Mode | `erase_sector`（預設）/ `erase_chip` / `none` |
 | Smart Flash | （僅 PyOCD）跳過未更動頁面，加速重複燒錄；若 EXT flash 回讀不穩定可停用 |
 | Flash Loaders | 附加外部 Flash Loader（例如 SPI Flash） |
 
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-> **J-Link + OpenOCD on Windows：** 需先用 [Zadig](https://zadig.akeo.ie/) 安裝 WinUSB 驅動（Options → List All Devices → 選取 J-Link → WinUSB → Replace Driver）。切換為 WinUSB 後，SEGGER 工具（Keil、J-Flash 等）將無法辨識 J-Link；還原方式為重新安裝 SEGGER J-Link Software。**J-Link + pyOCD 無需更換驅動。**
+> **J-Link + OpenOCD on Windows：** 需先用 [Zadig](https://zadig.akeo.ie/) 安裝 WinUSB 驅動。切換為 WinUSB 後，SEGGER 工具（Keil、J-Flash 等）將無法辨識 J-Link；還原方式為重新安裝 SEGGER J-Link Software。
+
+> **J-Link + pyOCD 無需更換驅動。**
 
 ---
 
