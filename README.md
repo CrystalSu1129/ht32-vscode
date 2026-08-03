@@ -450,7 +450,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 | Adapter Serial | Specify probe serial (blank = auto) |
 | Adapter Speed | Transfer rate in kHz (blank = interface default) |
 | OpenOCD Debug Level | 1–4 = increasing verbosity (default 1) |
-| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; disable if EXT flash read-back is unreliable |
+| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; |
 | DFP Path | Custom DFP path for SVD auto-detection |
 | SVD File | Peripheral register SVD file (blank = auto-detect) |
 | Erase Mode | `erase_sector` (default) / `erase_chip` / `none` |

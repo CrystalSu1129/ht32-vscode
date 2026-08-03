@@ -455,7 +455,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 | DFP Path | 自訂 DFP 路徑 |
 | SVD File | 周邊暫存器 SVD 檔案（空白 = 自動偵測） |
 | Erase Mode | `erase_sector`（預設）/ `erase_chip` / `none` |
-| Smart Flash | （僅 PyOCD）跳過未更動頁面，加速重複燒錄；若 EXT flash 回讀不穩定可停用 |
+| Smart Flash | （僅 PyOCD）跳過未更動頁面，加速重複燒錄； |
 | Flash Loaders | 附加外部 Flash Loader（例如 SPI Flash） |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
