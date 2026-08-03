@@ -2,7 +2,7 @@
 
 # Holtek HT32 VS Code Extension
 
-Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功能。支援匯入 Keil uVision 與 HT32-IDE 專案，或從零建立新專案，並透過內建 OpenOCD 與 e-Link32 探針實現一鍵編譯、燒錄與除錯。
+Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功能。支援匯入 Keil uVision 與 HT32-IDE 專案，或從零建立新專案，並透過 **pyOCD**（預設）或內建 OpenOCD 實現一鍵編譯、燒錄與除錯。
 
 ---
 
@@ -16,7 +16,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | **匯入 uVision** | 匯入 Keil `.uvprojx` / `.uvmpw` 專案，自動產生 Makefile、連結腳本、clangd 設定 |
 | **匯入 HT32-IDE** | 匯入一個或多個 Eclipse CDT `.project`/`.cproject` 專案資料夾（支援多選） |
 | **編譯 / 清除** | 一鍵或工具列按鈕；支援複合式 Post-Build 任務 |
-| **除錯** | Cortex-Debug + 內建 OpenOCD；支援 Flash & Debug 或 Attach 模式 |
+| **除錯** | Cortex-Debug + pyOCD（預設）或內建 OpenOCD；支援 Flash & Debug 或 Attach 模式 |
 | **燒錄** | 透過內建 OpenOCD + e-Link32 Pro/Lite 燒錄韌體 |
 | **專案設定** | 提供編譯器旗標、除錯介面、Post-Build 指令的 WebView 設定面板 |
 | **專案檔案樹** | 原始碼群組檢視，支援新增/移除檔案與群組 |
@@ -36,6 +36,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | FWLib | 需要；支援 HT32F1xxxx / HT32F4xxxx / HT32F5xxxx / HT32F490x1 / HT32F491x3 / HT32F493x5 |
 
 > **OpenOCD**：已內建<br>
+> **pyOCD**：首次使用時自動安裝<br>
 > **GCC 工具鏈**：擴充功能啟動時自動偵測；找不到時透過 winget 自動安裝<br>
 > **相依擴充功能**：安裝時自動一併安裝 **Cortex-Debug**（除錯介面）與 **Holtek HT32 Configuration Wizard**（[設定精靈](https://marketplace.visualstudio.com/items?itemName=holtek.ht32-config-vscode)）
 
@@ -90,7 +91,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | 按鈕 | 功能 |
 |------|------|
 | Build | 編譯（執行 make） |
-| Debug | 透過 OpenOCD 啟動 Cortex-Debug 除錯（Flash & Debug 或 Attach 模式） |
+| Debug | 透過 pyOCD 或 OpenOCD 啟動 Cortex-Debug 除錯（Flash & Debug 或 Attach 模式） |
 | Clean | 刪除 `build/` 輸出目錄 |
 | Download | 燒錄韌體（不啟動除錯） |
 | Settings | 開啟專案設定 |
@@ -211,6 +212,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 **工作區信任** — 若 VS Code 以受限模式開啟資料夾，擴充功能將顯示通知：*「This workspace is in Restricted Mode. Please trust the workspace to enable all features.」*，請點選 **Trust Workspace** 以啟用編譯與除錯功能。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/22.jpg" width="400" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+
 ---
 
 <br>
@@ -333,11 +335,19 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 > **Cortex-Debug** 為相依套件，安裝本擴充功能時會自動一併安裝。
 
+擴充功能支援兩種除錯後端，可在**設定 → Debugger → Debug Server** 切換：
+
+| 後端 | 說明 |
+|------|------|
+| **PyOCD**（預設） | 免安裝驅動；首次使用時自動安裝 |
+| **OpenOCD** | 已內建；可作為備選方案 |
+
+> **J-Link + OpenOCD on Windows：** 需透過 [Zadig](https://zadig.akeo.ie/) 安裝 WinUSB 驅動。**J-Link + pyOCD 無需更換驅動。**
+
 ### Debug（完整流程）
 
 1. HT32 工具列點 **Debug**
-2. 自動編譯、燒錄，並啟動 OpenOCD + GDB 除錯工作階段
-
+2. 自動編譯、燒錄，並啟動 GDB 除錯工作階段（透過選定的後端）
 
 ### Attach（附接到執行中的目標）
 
@@ -345,14 +355,16 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 1. 確認目標板已上電並執行
 2. 按 **F5** 或開啟 **Run and Debug**（Ctrl+Shift+D）
-3. 從下拉選單選擇 **HT32 OpenOCD Attach**
+3. 從下拉選單選擇 **HT32 PyOCD Attach**（或 **HT32 OpenOCD Attach**）
 
-> Attach 不會編譯也不會燒錄，直接透過 OpenOCD 附接到執行中的目標，不會 reset。
+> Attach 不會編譯也不會燒錄，直接附接到執行中的目標，不會 reset。
 
 | 模式 | 說明 |
 |------|------|
-| HT32 OpenOCD Debug | 編譯→燒錄→啟動除錯（完整流程） |
-| HT32 OpenOCD Attach | 不燒錄，直接附接到已執行中的目標 |
+| HT32 PyOCD Debug | 編譯→燒錄→啟動除錯 |
+| HT32 PyOCD Attach | 不燒錄，直接附接到執行中的目標 |
+| HT32 OpenOCD Debug | 編譯→燒錄→啟動除錯 |
+| HT32 OpenOCD Attach | 不燒錄，直接附接到執行中的目標 |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/11.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -436,16 +448,20 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 | 設定項目 | 說明 |
 |----------|------|
 | Debug Interface | `CMSIS-DAP`（e-Link32）/ `J-Link` / `ST-Link` |
+| **Debug Server** | **`PyOCD`**（預設）/ `OpenOCD` |
 | Adapter Serial | 指定除錯器序號（空白 = 自動） |
 | Adapter Speed | 傳輸速率 kHz（空白 = 介面預設） |
 | OpenOCD Debug Level | 0=關閉 / 1~3 逐漸詳細 |
 | DFP Path | 自訂 DFP 路徑 |
 | SVD File | 周邊暫存器 SVD 檔案（空白 = 自動偵測） |
 | Erase Mode | `erase_sector`（預設）/ `erase_chip` / `none` |
+| Smart Flash | （僅 PyOCD）跳過未更動頁面，加速重複燒錄；若 EXT flash 回讀不穩定可停用 |
 | Flash Loaders | 附加外部 Flash Loader（例如 SPI Flash） |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+
+> **J-Link + OpenOCD on Windows：** 需先用 [Zadig](https://zadig.akeo.ie/) 安裝 WinUSB 驅動（Options → List All Devices → 選取 J-Link → WinUSB → Replace Driver）。切換為 WinUSB 後，SEGGER 工具（Keil、J-Flash 等）將無法辨識 J-Link；還原方式為重新安裝 SEGGER J-Link Software。**J-Link + pyOCD 無需更換驅動。**
 
 ---
 
@@ -560,7 +576,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 
 ## 第三方授權
 
-內建元件（OpenOCD、GNU Make、HT32 DFP、fast-xml-parser）的授權資訊請參閱 `THIRD_PARTY_LICENSES.md`。
+內建與自動安裝元件的授權資訊請參閱 `THIRD_PARTY_LICENSES.md`。
 
 ---
 
@@ -568,5 +584,5 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 
 ## 授權
 
-MIT — 請參閱 `LICENSE`
+Proprietary — 請參閱 `LICENSE`
 

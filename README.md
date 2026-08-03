@@ -2,7 +2,7 @@
 
 # Holtek HT32 VS Code Extension
 
-A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3/M4). Converts Keil uVision and HT32-IDE projects to a Makefile workflow, or creates new projects from scratch — with one-click build, flash, and debug via the bundled OpenOCD and e-Link32 probe.
+A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3/M4). Converts Keil uVision and HT32-IDE projects to a Makefile workflow, or creates new projects from scratch — with one-click build, flash, and debug via **pyOCD** (default) or the bundled OpenOCD.
 
 ---
 
@@ -16,7 +16,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 | **Convert uVision** | Import Keil `.uvprojx` / `.uvmpw` projects — Makefile, linker script, clangd config auto-generated |
 | **Convert HT32-IDE** | Import one or more Eclipse CDT `.project`/`.cproject` project folders (multi-select supported) |
 | **Build / Clean** | One-click or toolbar buttons; compound post-build task support |
-| **Debug** | Cortex-Debug + bundled OpenOCD; Flash & Debug or Attach mode |
+| **Debug** | Cortex-Debug + pyOCD (default) or bundled OpenOCD; Flash & Debug or Attach mode |
 | **Download** | Download firmware via bundled OpenOCD + e-Link32 Pro/Lite |
 | **Project Settings** | WebView panel for compiler flags, debug interface, post-build commands |
 | **Project File Tree** | Source groups view with add/remove files and groups |
@@ -36,6 +36,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 | **FWLib** | Required; supports HT32F1xxxx / HT32F4xxxx / HT32F5xxxx / HT32F490x1 / HT32F491x3 / HT32F493x5 |
 
 > **OpenOCD:** Bundled.<br>
+> **pyOCD:** Installed automatically on first use — no manual setup required. Python is not required.<br>
 > **GCC toolchain:** Auto-detected on startup; installed automatically via winget if not found, or set manually in settings.<br>
 > **Extension dependencies:** [Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug) and [Holtek Configuration Wizard](https://marketplace.visualstudio.com/items?itemName=holtek.ht32-config-vscode) are installed automatically.
 
@@ -90,7 +91,7 @@ After installation, the **HT32 icon** appears in the Activity Bar. Click it to o
 | Button | Action |
 |--------|--------|
 | Build | Compile (runs make) |
-| Debug | Start Cortex-Debug session via OpenOCD (Flash & Debug or Attach) |
+| Debug | Start Cortex-Debug session via pyOCD or OpenOCD (Flash & Debug or Attach) |
 | Clean | Delete the `build/` output directory |
 | Download | Download firmware without starting a debug session |
 | Settings | Open Project Settings |
@@ -333,10 +334,19 @@ Open **Settings** (toolbar) → **Debugger** tab:
 
 > **Cortex-Debug** is a dependency and is installed automatically.
 
+The extension supports two debug backends, selectable in **Settings → Debugger → Debug Server**:
+
+| Server | Description |
+|--------|-------------|
+| **PyOCD** (default) | No driver installation needed; installed automatically on first use |
+| **OpenOCD** | Bundled; available as an alternative |
+
+> **J-Link on Windows with OpenOCD:** Requires WinUSB driver via [Zadig](https://zadig.akeo.ie/). J-Link works with pyOCD without driver changes.
+
 ### Full Debug Flow
 
 1. Click **Debug** in the HT32 toolbar
-2. The extension compiles, flashes, and starts an OpenOCD + GDB debug session
+2. The extension compiles, flashes, and starts a GDB debug session via the selected server
 
 ### Attach Mode (connect to an already-running target)
 
@@ -344,12 +354,14 @@ Use this when the target board is already running and you don't need to reflash.
 
 1. Confirm the target board is powered and running
 2. Press **F5** or open Run and Debug (**Ctrl+Shift+D**)
-3. Select **HT32 OpenOCD Attach** from the dropdown
+3. Select **HT32 PyOCD Attach** (or **HT32 OpenOCD Attach**) from the dropdown
 
-> Attach does not compile or flash — it connects directly via OpenOCD to the running target without resetting it.
+> Attach does not compile or flash — it connects directly to the running target without resetting it.
 
 | Mode | Description |
 |------|-------------|
+| HT32 PyOCD Debug | Compile → Flash → Start debug session |
+| HT32 PyOCD Attach | Connect to running target without flashing |
 | HT32 OpenOCD Debug | Compile → Flash → Start debug session |
 | HT32 OpenOCD Attach | Connect to running target without flashing |
 
@@ -434,16 +446,20 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 | Setting | Options |
 |---------|---------|
 | Debug Interface | `CMSIS-DAP` (e-Link32) / `J-Link` / `ST-Link` |
+| **Debug Server** | **`PyOCD`** (default) / `OpenOCD` |
 | Adapter Serial | Specify probe serial (blank = auto) |
 | Adapter Speed | Transfer rate in kHz (blank = interface default) |
 | OpenOCD Debug Level | 0 = off / 1–3 = increasing verbosity |
 | DFP Path | Custom DFP path for SVD auto-detection |
 | SVD File | Peripheral register SVD file (blank = auto-detect) |
 | Erase Mode | `erase_sector` (default) / `erase_chip` / `none` |
+| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; disable if EXT flash read-back is unreliable |
 | Flash Loaders | Add external flash loaders (e.g. SPI Flash) |
 
 <img src="media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/17.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+
+> **J-Link + OpenOCD on Windows:** Requires WinUSB driver installed via [Zadig](https://zadig.akeo.ie/) (Options → List All Devices → select J-Link → WinUSB → Replace Driver). After switching to WinUSB, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; restore by reinstalling SEGGER J-Link Software. **J-Link + pyOCD does not require driver changes.**
 
 ---
 
@@ -556,7 +572,7 @@ Flash/download support (via bundled OpenOCD + HLM loaders) is available for ~100
 
 ## Third-Party Licenses
 
-See `THIRD_PARTY_LICENSES.md` for license information for bundled components (OpenOCD, GNU Make, HT32 DFP, fast-xml-parser).
+See `THIRD_PARTY_LICENSES.md` for license information for bundled and auto-installed components.
 
 ---
 
@@ -564,4 +580,4 @@ See `THIRD_PARTY_LICENSES.md` for license information for bundled components (Op
 
 ## License
 
-MIT — see `LICENSE`
+Proprietary — see `LICENSE`
