@@ -451,7 +451,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 | Debug Interface | `CMSIS-DAP`（e-Link32）/ `J-Link` / `ST-Link` |
 | Adapter Serial | 指定除錯器序號（空白 = 自動） |
 | Adapter Speed | 傳輸速率 kHz（空白 = 介面預設） |
-| OpenOCD Debug Level | 1~4 逐漸詳細（預設 1）|
+| Debug Level | 1~4 逐漸詳細（預設 1）|
 | DFP Path | 自訂 DFP 路徑 |
 | SVD File | 周邊暫存器 SVD 檔案（空白 = 自動偵測） |
 | Erase Mode | `erase_sector`（預設）/ `erase_chip` / `none` |

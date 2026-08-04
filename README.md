@@ -449,7 +449,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 | Debug Interface | `CMSIS-DAP` (e-Link32) / `J-Link` / `ST-Link` |
 | Adapter Serial | Specify probe serial (blank = auto) |
 | Adapter Speed | Transfer rate in kHz (blank = interface default) |
-| OpenOCD Debug Level | 1–4 = increasing verbosity (default 1) |
+| Debug Level | 1–4 = increasing verbosity (default 1) |
 | Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; |
 | DFP Path | Custom DFP path for SVD auto-detection |
 | SVD File | Peripheral register SVD file (blank = auto-detect) |
