@@ -21,7 +21,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | **專案設定** | 提供編譯器旗標、除錯介面、Post-Build 指令的 WebView 設定面板 |
 | **專案檔案樹** | 原始碼群組檢視，支援新增/移除檔案與群組 |
 | **設定精靈** | HT32 設定檔視覺化編輯器（`conf.h`、`usbdconf.h`、`startup.s`），相容 Keil 精靈語法 |
-| **clangd / IntelliSense** | 自動產生 `.clangd` 與合併後的 `compile_commands.json` |
+| **Code Intelligence (clangd)** | 自動產生 `.clangd` 與合併後的 `compile_commands.json` |
 
 ---
 
@@ -523,9 +523,9 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 
 <br>
 
-## IntelliSense（clangd）
+## Code Intelligence（clangd）
 
-匯入或建立專案後，開啟專案時自動產生 `.clangd` 與 `.vscode/compile_commands.json`，提供完整的 IntelliSense 支援。
+匯入或建立專案後，開啟專案時自動產生 `.clangd` 與 `.vscode/compile_commands.json`，提供完整的 code intelligence 支援。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/13.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/14.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">

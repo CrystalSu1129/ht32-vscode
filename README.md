@@ -21,7 +21,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 | **Project Settings** | WebView panel for compiler flags, debug interface, post-build commands |
 | **Project File Tree** | Source groups view with add/remove files and groups |
 | **Configuration Wizard** | Visual editor for HT32 config files (`conf.h`, `usbdconf.h`, `startup.s`) — Keil-compatible wizard syntax |
-| **clangd / IntelliSense** | Auto-generates `.clangd` and merged `compile_commands.json` |
+| **Code Intelligence (clangd)** | Auto-generates `.clangd` and merged `compile_commands.json` |
 
 ---
 
@@ -519,9 +519,9 @@ Changes are written back to the source file immediately; only the modified value
 
 <br>
 
-## IntelliSense (clangd)
+## Code Intelligence (clangd)
 
-After conversion or project creation, the extension auto-generates `.clangd` and `.vscode/compile_commands.json` for full IntelliSense support.
+After conversion or project creation, the extension auto-generates `.clangd` and `.vscode/compile_commands.json` for full code intelligence support.
 
 <img src="media/13.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/14.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
