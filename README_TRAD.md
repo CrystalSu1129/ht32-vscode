@@ -21,7 +21,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | **專案設定** | 提供編譯器旗標、除錯介面、Post-Build 指令的 WebView 設定面板 |
 | **專案檔案樹** | 原始碼群組檢視，支援新增/移除檔案與群組 |
 | **設定精靈** | HT32 設定檔視覺化編輯器（`conf.h`、`usbdconf.h`、`startup.s`），相容 Keil 精靈語法 |
-| **Code Intelligence (clangd)** | 自動產生 `.clangd` 與合併後的 `compile_commands.json` |
+| **Code Intelligence (clangd)** | 自動產生 `.clangd` 與各專案獨立的 `compile_commands.json` |
 
 ---
 
@@ -33,7 +33,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 |------|------|
 | 作業系統 | Windows x64 |
 | 除錯器 | Holtek e-Link32 Pro / Lite；支援 J-Link、ST-Link |
-| FWLib | 需要；支援 HT32F1xxxx / HT32F4xxxx / HT32F5xxxx / HT32F490x1 / HT32F491x3 / HT32F493x5 |
+| FWLib | 需要 |
 
 > **OpenOCD**：已內建<br>
 > **pyOCD**：首次使用時自動安裝<br>
@@ -117,8 +117,8 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 | 對象 | 操作 |
 |------|------|
-| 樹狀根節點（`.ht32vs`） | Rename Project File（重新命名）、Add Project（新增子專案） |
-| 子專案節點 | Add Group（新增群組）、Remove Project（從 workspace 移除） |
+| 樹狀根節點（`.ht32vs`） | Rename Project File（重新命名）|
+| 子專案節點 | Add Group（新增群組）、Remove Project（從清單移除） |
 | 群組 | Add Files to Group（新增檔案）、Remove Group（移除群組） |
 | 檔案 | Remove from Group（從群組移除）、Delete File（從磁碟刪除） |
 
@@ -143,9 +143,17 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 一個 `.ht32vs` 可包含多個子專案目錄（例如 `Project_IAP` 與 `Project_AP`），無需重新轉換即可隨時新增或移除。
 
+**使用多專案功能**時，所有子專案必須位於**同一個 `HT32_VSCode/` 資料夾**下。透過 Project Tree 頂部的工具列按鈕新增子專案：
+
+- **Add New Project** — 執行精靈，在同一資料夾建立新的子專案。
+- **Add Existing Project** — 從同一資料夾中已轉換或建立但尚未列入的專案中選取。
+
+若目前只有一個子專案，新增第二個時會彈出提示，要求輸入新的專案檔名稱。
+
 | 操作 | 方式 |
 |------|------|
-| **新增子專案** | 在根節點按右鍵 → **Add Project**，從同一資料夾中選擇可用目錄 |
+| **新增子專案（新建）** | 工具列按鈕 **$(add)** — 建立新子專案 |
+| **新增子專案（現有）** | 工具列按鈕 **$(folder-opened)** — 從同一資料夾中選擇專案目錄 |
 | **移除子專案** | 在專案節點按右鍵 → **Remove Project**，從清單中移除（磁碟上的檔案不會刪除）。僅剩一個子專案時無法執行。 |
 | **上移 / 下移** | 在專案節點按右鍵 → **Move Up** 或 **Move Down**，調整子專案在 **Build All** 時的編譯順序。 |
 
@@ -153,6 +161,53 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 在 Project Tree 的根節點按右鍵 → **Rename Project File**，即可同時更名 `.ht32vs` 檔案並自動更新 Recent Projects 清單。
 
+
+---
+
+<br>
+
+## 多專案（Multi-Project）
+
+**多專案**允許多個獨立子專案（例如 `Project_IAP` 與 `Project_AP`）共用同一個 `HT32_VSCode/` 資料夾，並在 Project Tree 中一起管理。
+
+### 建立多專案
+
+使用 Project Tree 頂部的工具列按鈕：
+
+| 按鈕 | 功能 |
+|------|------|
+| **$(add) Add New Project** | 執行建立專案精靈，新增子專案 |
+| **$(folder-opened) Add Existing Project** | 從同一資料夾中選取已轉換或建立的專案 |
+
+當目前只有**一個**子專案，新增第二個時會彈出提示，要求輸入**新的專案檔名稱**（預設為專案根目錄名稱）。確認後產生：
+
+| 檔案 | 內容 | 角色 |
+|------|------|------|
+| `ProjectA.ht32vs` | `{ "projects": ["ProjectA"] }` | 原有單一專案（不動） |
+| `ProjectB.ht32vs` | `{ "projects": ["ProjectB"] }` | 新的單一專案 |
+| `MyProject.ht32vs` | `{ "projects": ["ProjectA", "ProjectB"] }` | 多專案（設為 active） |
+
+三個 `.ht32vs` 檔案共存，雙擊任一個即可切換。
+
+### 目錄結構
+
+```
+MyProject/
+└── HT32_VSCode/
+    ├── ProjectA.ht32vs          ← 單一專案視圖
+    ├── ProjectB.ht32vs          ← 單一專案視圖
+    ├── MyProject.ht32vs         ← 多專案視圖（active）
+    ├── ProjectA/
+    │   ├── Makefile
+    │   └── ...
+    └── ProjectB/
+        ├── Makefile
+        └── ...
+```
+
+### 編譯與除錯
+
+點擊工具列的 **Build**、**Debug**、**Clean** 或 **Download** 時，會彈出 QuickPick 讓使用者選擇要對哪個子專案執行。**Build** 與 **Clean** 另提供 **Build All** / **Clean All**，依序執行所有子專案。編譯順序由 Project Tree 的排列決定，可透過**右鍵 → Move Up / Move Down** 調整。
 
 ---
 
@@ -186,12 +241,12 @@ MyProject/                 ← 使用者命名的專案資料夾
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   ├── launch.json
-    │   └── compile_commands.json
+    │   └── launch.json
     ├── <projectName>.ht32vs
     └── <projectName>/     ← 名稱來自精靈中輸入的專案名稱
         ├── Makefile
         ├── sources.list
+        ├── compile_commands.json
         ├── *.json
         ├── src/           ← 使用者原始碼
         │   ├── main.c
@@ -205,8 +260,6 @@ MyProject/                 ← 使用者命名的專案資料夾
             ├── syscalls.c
             └── ht32_stack_analysis.c
 ```
-
-若要新增第二個專案，再次執行 **Create Project** 並選擇與現有專案**相同的上層資料夾**，在詢問時選擇 **Yes** 合併至現有的 `.ht32vs` 專案檔。每個專案完全獨立，放在各自的 `<projectName>/` 資料夾內。不同資料夾下的專案無法合併。
 
 **NOTE:**
 **工作區信任** — 若 VS Code 以受限模式開啟資料夾，將顯示通知：*「You are in Restricted Mode」*，請點選 **Trust** 以啟用編譯與除錯功能。
@@ -242,14 +295,15 @@ MyProject/                 ← 使用者命名的專案資料夾
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   ├── launch.json
-    │   └── compile_commands.json
+    │   └── launch.json
     ├── GNU_ARM/           ← 共用：startup .s、linker script、ht32_op.c、syscalls.c、ht32_stack_analysis.c
     ├── Project_IAP/       ← 取自 uvprojx 檔名
     │   ├── Makefile
+    │   ├── compile_commands.json
     │   └── *.json
     └── Project_AP/
         ├── Makefile
+        ├── compile_commands.json
         └── *.json
 ```
 
@@ -525,7 +579,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 
 ## Code Intelligence（clangd）
 
-匯入或建立專案後，開啟專案時自動產生 `.clangd` 與 `.vscode/compile_commands.json`，提供完整的 code intelligence 支援。
+匯入或建立專案後，開啟專案時自動為每個專案產生 `.clangd` 與獨立的 `compile_commands.json`，提供完整的 code intelligence 支援。多專案時，在專案樹點選任意節點，`.clangd` 會自動切換至該專案的 `compile_commands.json`。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/13.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/14.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
@@ -553,24 +607,6 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 | `HT32: Close Project` | 關閉目前載入的專案 |
 | `HT32: Clear Recent Projects` | 清除最近開啟清單 |
 | `HT32: Refresh Stack Usage` | 手動刷新 Stack Usage Analysis 面板 |
-
----
-
-<br>
-
-## 支援的裝置
-
-共 141 個 HT32 裝置，分為 6 個系列：
-
-| 核心 | 系列 | 範例 |
-|------|------|------|
-| Cortex-M0+ | HT32F5xxxx | HT32F52352, HT32F52341, HT32F0008 |
-| Cortex-M3 | HT32F1xxxx | HT32F12345, HT32F12366 |
-| Cortex-M4 | HT32F4xxxx | HT32F40316, HT32F45369 |
-| Cortex-M4 | HT32F490x / 491x / 493x | HT32F49163, HT32F49395 |
-| Cortex-M33 | HT32F675xx | HT32F67575, HT32F67595 |
-
-燒錄支援（透過內建 OpenOCD + HLM loader）約涵蓋 100 個裝置。
 
 ---
 

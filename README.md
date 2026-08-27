@@ -21,7 +21,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 | **Project Settings** | WebView panel for compiler flags, debug interface, post-build commands |
 | **Project File Tree** | Source groups view with add/remove files and groups |
 | **Configuration Wizard** | Visual editor for HT32 config files (`conf.h`, `usbdconf.h`, `startup.s`) — Keil-compatible wizard syntax |
-| **Code Intelligence (clangd)** | Auto-generates `.clangd` and merged `compile_commands.json` |
+| **Code Intelligence (clangd)** | Auto-generates `.clangd` and per-project `compile_commands.json` |
 
 ---
 
@@ -33,7 +33,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 |------|-------------|
 | **OS** | Windows x64 |
 | **Debug probe** | Holtek e-Link32 Pro or e-Link32 Lite; J-Link and ST-Link also supported |
-| **FWLib** | Required; supports HT32F1xxxx / HT32F4xxxx / HT32F5xxxx / HT32F490x1 / HT32F491x3 / HT32F493x5 |
+| **FWLib** | Required |
 
 > **OpenOCD:** Bundled.<br>
 > **pyOCD:** Installed automatically on first use — no manual setup required. Python is not required.<br>
@@ -117,7 +117,7 @@ Right-click menu:
 
 | Target | Actions |
 |--------|---------|
-| Tree root (`.ht32vs`) | Rename Project File, Add Project |
+| Tree root (`.ht32vs`) | Rename Project File |
 | Sub-project node | Add Group, Remove Project |
 | Group | Add Files to Group, Remove Group |
 | File | Remove from Group, Delete File |
@@ -143,9 +143,17 @@ Every HT32 project is associated with a **`.ht32vs` project file** (stored insid
 
 A `.ht32vs` file can list multiple sub-project folders (e.g. `Project_IAP` and `Project_AP`). You can add or remove entries at any time without re-converting.
 
+**To use multi-project**, all sub-projects must reside in the **same `HT32_VSCode/` folder**. Use the toolbar buttons at the top of the Project Tree to add a project:
+
+- **Add New Project** — run the wizard to create a new sub-project in the same folder.
+- **Add Existing Project** — select from projects already converted or created in the same folder but not yet listed.
+
+When a second project is added to a single-project, you will be prompted to enter a name for the new project file.
+
 | Action | How |
 |--------|-----|
-| **Add Project** | Right-click the root node → **Add Project** — select from available folders in the same location |
+| **Add New Project** | Toolbar button **$(add)** — create a new sub-project |
+| **Add Existing Project** | Toolbar button **$(folder-opened)** — select from projects in the same folder |
 | **Remove&nbsp;Project** | Right-click a project node → **Remove Project** — removes it from the list (files on disk are not deleted). Not available when only one project remains. |
 | **Move Up / Move Down** | Right-click a project node → **Move Up** or **Move Down** — adjusts the sub-project's compilation order in **Build All**. |
 
@@ -153,6 +161,53 @@ A `.ht32vs` file can list multiple sub-project folders (e.g. `Project_IAP` and `
 
 Right-click the root node in the Project Tree → **Rename Project File**. This renames the `.ht32vs` file on disk and updates the Recent Projects list automatically.
 
+
+---
+
+<br>
+
+## Multi-Project
+
+**Multi-project** allows multiple independent sub-projects (e.g. `Project_IAP` and `Project_AP`) to share the same `HT32_VSCode/` folder and be managed together in the Project Tree.
+
+### How to set up multi-project
+
+Use the toolbar buttons at the top of the Project Tree:
+
+| Button | Action |
+|--------|--------|
+| **$(add) Add New Project** | Run the Create Project wizard to add a new sub-project |
+| **$(folder-opened) Add Existing Project** | Select a project already converted or created in the same folder |
+
+When the current project has only **one** sub-project and you add a second, a prompt appears asking for a **project file name** (defaults to the project root folder name). Confirming creates:
+
+| File | Contents | Role |
+|------|----------|------|
+| `ProjectA.ht32vs` | `{ "projects": ["ProjectA"] }` | original single-project (unchanged) |
+| `ProjectB.ht32vs` | `{ "projects": ["ProjectB"] }` | new single-project |
+| `MyProject.ht32vs` | `{ "projects": ["ProjectA", "ProjectB"] }` | multi-project (set as active) |
+
+All three `.ht32vs` files coexist. Double-click any of them to switch views.
+
+### File structure
+
+```
+MyProject/
+└── HT32_VSCode/
+    ├── ProjectA.ht32vs          ← single-project view
+    ├── ProjectB.ht32vs          ← single-project view
+    ├── MyProject.ht32vs         ← multi-project view (active)
+    ├── ProjectA/
+    │   ├── Makefile
+    │   └── ...
+    └── ProjectB/
+        ├── Makefile
+        └── ...
+```
+
+### Building and debugging
+
+Clicking **Build**, **Debug**, **Clean**, or **Download** in the toolbar shows a QuickPick to select which sub-project to act on. **Build** and **Clean** also include **Build All** / **Clean All** that runs all sub-projects in sequence. The compilation order follows the Project Tree order — use **Move Up / Move Down** (right-click a project node) to adjust it.
 
 ---
 
@@ -186,12 +241,12 @@ MyProject/                 ← user-named project folder
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   ├── launch.json
-    │   └── compile_commands.json
+    │   └── launch.json
     ├── <projectName>.ht32vs
     └── <projectName>/     ← named from the project name entered in the wizard
         ├── Makefile
         ├── sources.list
+        ├── compile_commands.json
         ├── *.json
         ├── src/           ← user source files
         │   ├── main.c
@@ -205,8 +260,6 @@ MyProject/                 ← user-named project folder
             ├── syscalls.c
             └── ht32_stack_analysis.c
 ```
-
-To add a second project, run **Create Project** again and select the **same parent folder** as the existing project. When prompted, select **Yes** to merge into the existing `.ht32vs` project file. Each project is fully self-contained under its own `<projectName>/` folder. Projects located in different folders cannot be merged.
 
 > **Workspace Trust** — If VS Code opens the folder in Restricted Mode, VS Code will show a notification: *"You are in Restricted Mode"* Click **Trust** to enable build and debug.
 
@@ -241,14 +294,15 @@ For `.uvmpw`, **all sub-projects are converted at once**, each into its own fold
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   ├── launch.json
-    │   └── compile_commands.json
+    │   └── launch.json
     ├── GNU_ARM/           ← shared: startup .s, linker script, ht32_op.c, syscalls.c, ht32_stack_analysis.c
     ├── Project_IAP/       ← named from uvprojx filename
     │   ├── Makefile
+    │   ├── compile_commands.json
     │   └── *.json
     └── Project_AP/
         ├── Makefile
+        ├── compile_commands.json
         └── *.json
 ```
 
@@ -286,7 +340,7 @@ Each selected folder is converted into its own folder inside `HT32_VSCode/`, sha
 
 <img src="media/8.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-For multi-project workspaces, clicking **Build**, **Debug**, **Clean**, or **Download** in the toolbar shows a QuickPick to select which sub-project to act on. **Build** and **Clean** also include a **Build All** / **Clean All** option that runs all sub-projects in sequence. The compilation order follows the project order in the Project Tree — use **Move Up / Move Down** (right-click a project node) to adjust it.
+For multi-project, clicking **Build**, **Debug**, **Clean**, or **Download** in the toolbar shows a QuickPick to select which sub-project to act on. **Build** and **Clean** also include a **Build All** / **Clean All** option that runs all sub-projects in sequence. The compilation order follows the project order in the Project Tree — use **Move Up / Move Down** (right-click a project node) to adjust it.
 
 <br>
 
@@ -521,7 +575,7 @@ Changes are written back to the source file immediately; only the modified value
 
 ## Code Intelligence (clangd)
 
-After conversion or project creation, the extension auto-generates `.clangd` and `.vscode/compile_commands.json` for full code intelligence support.
+After conversion or project creation, the extension auto-generates `.clangd` and a `compile_commands.json` for each project for full code intelligence support. In multi-project, `.clangd` automatically switches to the selected project's `compile_commands.json` when you click a node in the project tree.
 
 <img src="media/13.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/14.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
@@ -549,24 +603,6 @@ After conversion or project creation, the extension auto-generates `.clangd` and
 | `HT32: Close Project` | Close the currently loaded project |
 | `HT32: Clear Recent Projects` | Clear the Recent Projects list |
 | `HT32: Refresh Stack Usage` | Manually refresh the Stack Usage Analysis panel |
-
----
-
-<br>
-
-## Supported Devices
-
-141 HT32 devices across 6 series:
-
-| Core | Series | Examples |
-|------|--------|---------|
-| Cortex-M0+ | HT32F5xxxx | HT32F52352, HT32F52341, HT32F0008 |
-| Cortex-M3 | HT32F1xxxx | HT32F12345, HT32F12366 |
-| Cortex-M4 | HT32F4xxxx | HT32F40316, HT32F45369 |
-| Cortex-M4 | HT32F490x / 491x / 493x | HT32F49163, HT32F49395 |
-| Cortex-M33 | HT32F675xx | HT32F67575, HT32F67595 |
-
-Flash/download support (via bundled OpenOCD + HLM loaders) is available for ~100 devices.
 
 ---
 
