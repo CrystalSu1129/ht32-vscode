@@ -90,7 +90,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 | 按鈕 | 功能 |
 |------|------|
-| Build | 編譯（執行 make） |
+| Build | 編譯 |
 | Debug | 透過 pyOCD 或 OpenOCD 啟動 Cortex-Debug 除錯（Flash & Debug 或 Attach 模式） |
 | Clean | 刪除 `build/` 輸出目錄 |
 | Download | 燒錄韌體（不啟動除錯） |
@@ -101,7 +101,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 | 項目 | 功能 |
 |------|------|
-| Create Project | 開啟建立專案精靈（可在專案已開啟時使用） |
+| Create Project | 開啟建立專案精靈 |
 | Open Project | 開啟 `.ht32vs` 專案檔 |
 | Close Project | 關閉目前載入的專案 |
 
@@ -113,15 +113,15 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
-將滑鼠移至根節點即可顯示 **Add New Project** 與 **Add Existing Project** 兩個按鈕。
+將滑鼠移至根節點即可顯示兩個按鈕：**Add New Project**（執行精靈建立新子專案）與 **Add Existing Project**（從同一資料夾選取已轉換或建立的專案）。
 
 右鍵選單：
 
 | 對象 | 操作 |
 |------|------|
-| 樹狀根節點（`.ht32vs`） | Rename Project File（重新命名）|
-| 子專案節點 | Add Group（新增群組）、Remove Project（從清單移除） |
-| 群組 | Add Files to Group（新增檔案）、Remove Group（移除群組） |
+| 樹狀根節點（`.ht32vs`） | Add Existing Project（加入現有子專案）、Rename Project File（重新命名）|
+| 子專案節點 | Move Up（上移）、Move Down（下移）、Remove Project（從清單移除）、Add Group（新增群組） |
+| 群組 | Add New Files（新建檔案）、Add Existing Files（加入現有檔案）、Remove Group（移除群組） |
 | 檔案 | Remove from Group（從群組移除）、Delete File（從磁碟刪除） |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/12.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>

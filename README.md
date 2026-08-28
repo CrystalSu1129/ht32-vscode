@@ -12,7 +12,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 
 | Feature | Description |
 |---------|-------------|
-| **Create Project** | Wizard-driven project generator from HT32 FWLib (standard & 49x series) |
+| **Create Project** | Wizard-driven project generator from HT32 FWLib |
 | **Convert uVision** | Import Keil `.uvprojx` / `.uvmpw` projects — Makefile, linker script, clangd config auto-generated |
 | **Convert HT32-IDE** | Import one or more Eclipse CDT `.project`/`.cproject` project folders (multi-select supported) |
 | **Build / Clean** | One-click or toolbar buttons; compound post-build task support |
@@ -90,7 +90,7 @@ After installation, the **HT32 icon** appears in the Activity Bar. Click it to o
 
 | Button | Action |
 |--------|--------|
-| Build | Compile (runs make) |
+| Build | Compile |
 | Debug | Start Cortex-Debug session via pyOCD or OpenOCD (Flash & Debug or Attach) |
 | Clean | Delete the `build/` output directory |
 | Download | Download firmware without starting a debug session |
@@ -101,7 +101,7 @@ The **`···` (More Actions)** menu also contains:
 
 | Item | Action |
 |------|--------|
-| Create Project | Open the Create Project wizard (can be used while a project is open) |
+| Create Project | Open the Create Project wizard |
 | Open Project | Open a `.ht32vs` project file |
 | Close Project | Close the currently loaded project |
 
@@ -113,15 +113,15 @@ The **`···` (More Actions)** menu also contains:
 
 <img src="media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
-Hovering over the root node reveals two inline action buttons: **Add New Project** and **Add Existing Project**.
+Hovering over the root node reveals two buttons: **Add New Project** (run the wizard to create a new sub-project) and **Add Existing Project** (select a project already converted or created in the same folder).
 
 Right-click menu:
 
 | Target | Actions |
 |--------|---------|
-| Tree root (`.ht32vs`) | Rename Project File |
-| Sub-project node | Add Group, Remove Project |
-| Group | Add Files to Group, Remove Group |
+| Tree root (`.ht32vs`) | Add Existing Project, Rename Project File |
+| Sub-project node | Move Up, Move Down, Remove Project, Add Group |
+| Group | Add New Files, Add Existing Files, Remove Group |
 | File | Remove from Group, Delete File |
 
 <img src="media/12.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
