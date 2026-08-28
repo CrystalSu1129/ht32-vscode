@@ -113,9 +113,16 @@ The **`···` (More Actions)** menu also contains:
 
 <img src="media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
-Hovering over the root node reveals two buttons: **Add New Project** (run the wizard to create a new sub-project) and **Add Existing Project** (select a project already converted or created in the same folder).
+Hovering over the root node reveals:
 
-Right-click menu:
+| Button | Action |
+|--------|--------|
+| **Add New Project** | Run the wizard to create a new sub-project in the same folder |
+| **Add Existing Project** | Select a project already converted or created in the same folder |
+
+<br>
+
+## **Right-click menu:**
 
 | Target | Actions |
 |--------|---------|

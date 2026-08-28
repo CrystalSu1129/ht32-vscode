@@ -113,9 +113,16 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
-將滑鼠移至根節點即可顯示兩個按鈕：**Add New Project**（執行精靈建立新子專案）與 **Add Existing Project**（從同一資料夾選取已轉換或建立的專案）。
+將滑鼠移至根節點即可顯示兩個按鈕：**Add New Project**與 **Add Existing Project**：
 
-右鍵選單：
+| 按鈕 | 功能 |
+|------|------|
+| **Add New Project** | 執行精靈，在同一資料夾建立新子專案 |
+| **Add Existing Project** | 從同一資料夾選取已轉換或建立的專案 |
+
+<br>
+
+## **右鍵選單：**
 
 | 對象 | 操作 |
 |------|------|
