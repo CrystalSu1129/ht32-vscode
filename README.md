@@ -113,6 +113,8 @@ The **`···` (More Actions)** menu also contains:
 
 <img src="media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
+Hovering over the root node reveals two inline action buttons: **Add New Project** and **Add Existing Project**.
+
 Right-click menu:
 
 | Target | Actions |
@@ -143,17 +145,14 @@ Every HT32 project is associated with a **`.ht32vs` project file** (stored insid
 
 A `.ht32vs` file can list multiple sub-project folders (e.g. `Project_IAP` and `Project_AP`). You can add or remove entries at any time without re-converting.
 
-**To use multi-project**, all sub-projects must reside in the **same `HT32_VSCode/` folder**. Use the toolbar buttons at the top of the Project Tree to add a project:
-
-- **Add New Project** — run the wizard to create a new sub-project in the same folder.
-- **Add Existing Project** — select from projects already converted or created in the same folder but not yet listed.
+**To use multi-project**, all sub-projects must reside in the **same `HT32_VSCode/` folder**. Hover over the root node in the Project Tree to reveal the **Add New Project** and **Add Existing Project** buttons.
 
 When a second project is added to a single-project, you will be prompted to enter a name for the new project file.
 
 | Action | How |
 |--------|-----|
-| **Add New Project** | Toolbar button **$(add)** — create a new sub-project |
-| **Add Existing Project** | Toolbar button **$(folder-opened)** — select from projects in the same folder |
+| **Add New Project** | Hover the root node → **Add New Project** — run the Create Project wizard to add a new sub-project |
+| **Add Existing Project** | Hover the root node → **Add Existing Project** — select a project already converted or created in the same folder |
 | **Remove&nbsp;Project** | Right-click a project node → **Remove Project** — removes it from the list (files on disk are not deleted). Not available when only one project remains. |
 | **Move Up / Move Down** | Right-click a project node → **Move Up** or **Move Down** — adjusts the sub-project's compilation order in **Build All**. |
 
@@ -172,12 +171,12 @@ Right-click the root node in the Project Tree → **Rename Project File**. This 
 
 ### How to set up multi-project
 
-Use the toolbar buttons at the top of the Project Tree:
+Hover over the root node in the Project Tree to reveal the **Add New Project** and **Add Existing Project** buttons.
 
-| Button | Action |
-|--------|--------|
-| **$(add) Add New Project** | Run the Create Project wizard to add a new sub-project |
-| **$(folder-opened) Add Existing Project** | Select a project already converted or created in the same folder |
+| Action | How |
+|--------|-----|
+| **Add New Project** | Hover the root node → **Add New Project** — run the Create Project wizard to add a new sub-project |
+| **Add Existing Project** | Hover the root node → **Add Existing Project** — select a project already converted or created in the same folder |
 
 When the current project has only **one** sub-project and you add a second, a prompt appears asking for a **project file name** (defaults to the project root folder name). Confirming creates:
 

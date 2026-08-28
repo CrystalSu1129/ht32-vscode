@@ -113,6 +113,8 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
+將滑鼠移至根節點即可顯示 **Add New Project** 與 **Add Existing Project** 兩個按鈕。
+
 右鍵選單：
 
 | 對象 | 操作 |
@@ -143,17 +145,14 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 一個 `.ht32vs` 可包含多個子專案目錄（例如 `Project_IAP` 與 `Project_AP`），無需重新轉換即可隨時新增或移除。
 
-**使用多專案功能**時，所有子專案必須位於**同一個 `HT32_VSCode/` 資料夾**下。透過 Project Tree 頂部的工具列按鈕新增子專案：
-
-- **Add New Project** — 執行精靈，在同一資料夾建立新的子專案。
-- **Add Existing Project** — 從同一資料夾中已轉換或建立但尚未列入的專案中選取。
+**使用多專案功能**時，所有子專案必須位於**同一個 `HT32_VSCode/` 資料夾**下。將滑鼠移至根節點即可顯示 **Add New Project** 與 **Add Existing Project** 按鈕。
 
 若目前只有一個子專案，新增第二個時會彈出提示，要求輸入新的專案檔名稱。
 
 | 操作 | 方式 |
 |------|------|
-| **新增子專案（新建）** | 工具列按鈕 **$(add)** — 建立新子專案 |
-| **新增子專案（現有）** | 工具列按鈕 **$(folder-opened)** — 從同一資料夾中選擇專案目錄 |
+| **新增子專案（新建）** | 將滑鼠移至根節點 → **Add New Project** — 執行建立專案精靈，新增子專案 |
+| **新增子專案（現有）** | 將滑鼠移至根節點 → **Add Existing Project** — 從同一資料夾中選取已轉換或建立的專案 |
 | **移除子專案** | 在專案節點按右鍵 → **Remove Project**，從清單中移除（磁碟上的檔案不會刪除）。僅剩一個子專案時無法執行。 |
 | **上移 / 下移** | 在專案節點按右鍵 → **Move Up** 或 **Move Down**，調整子專案在 **Build All** 時的編譯順序。 |
 
@@ -172,12 +171,12 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 ### 建立多專案
 
-使用 Project Tree 頂部的工具列按鈕：
+Hover 根節點即可顯示 **Add New Project** 與 **Add Existing Project** 按鈕。
 
-| 按鈕 | 功能 |
+| 操作 | 方式 |
 |------|------|
-| **$(add) Add New Project** | 執行建立專案精靈，新增子專案 |
-| **$(folder-opened) Add Existing Project** | 從同一資料夾中選取已轉換或建立的專案 |
+| **新增子專案（新建）** | 將滑鼠移至根節點 → **Add New Project** — 執行建立專案精靈，新增子專案 |
+| **新增子專案（現有）** | 將滑鼠移至根節點 → **Add Existing Project** — 從同一資料夾中選取已轉換或建立的專案 |
 
 當目前只有**一個**子專案，新增第二個時會彈出提示，要求輸入**新的專案檔名稱**（預設為專案根目錄名稱）。確認後產生：
 
