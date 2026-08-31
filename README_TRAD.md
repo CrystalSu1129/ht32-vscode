@@ -111,7 +111,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 **專案檔案樹**顯示原始碼群組結構，與 Keil uVision 的群組概念相同。
 
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5-1.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
 將滑鼠移至根節點即可顯示兩個按鈕：**Add New Project**與 **Add Existing Project**：
 
@@ -150,11 +150,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 ### 管理子專案
 
-一個 `.ht32vs` 可包含多個子專案目錄（例如 `Project_IAP` 與 `Project_AP`），無需重新轉換即可隨時新增或移除。
-
-**使用多專案功能**時，所有子專案必須位於**同一個 `HT32_VSCode/` 資料夾**下。將滑鼠移至根節點即可顯示 **Add New Project** 與 **Add Existing Project** 按鈕。
-
-若目前只有一個子專案，新增第二個時會彈出提示，要求輸入新的專案檔名稱。
+一個 `.ht32vs` 可包含多個子專案目錄（例如 `Project_IAP` 與 `Project_AP`），可隨時新增或移除。所有子專案必須位於**同一個 `HT32_VSCode/` 資料夾**下。
 
 | 操作 | 方式 |
 |------|------|
@@ -163,29 +159,10 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | **移除子專案** | 在專案節點按右鍵 → **Remove Project**，從清單中移除（磁碟上的檔案不會刪除）。僅剩一個子專案時無法執行。 |
 | **上移 / 下移** | 在專案節點按右鍵 → **Move Up** 或 **Move Down**，調整子專案在 **Build All** 時的編譯順序。 |
 
-### 重新命名專案
-
-在 Project Tree 的根節點按右鍵 → **Rename Project File**，即可同時更名 `.ht32vs` 檔案並自動更新 Recent Projects 清單。
-
-
----
-
-<br>
-
-## 多專案（Multi-Project）
-
-**多專案**允許多個獨立子專案（例如 `Project_IAP` 與 `Project_AP`）共用同一個 `HT32_VSCode/` 資料夾，並在 Project Tree 中一起管理。
-
-### 建立多專案
-
-Hover 根節點即可顯示 **Add New Project** 與 **Add Existing Project** 按鈕。
-
-| 操作 | 方式 |
-|------|------|
-| **新增子專案（新建）** | 將滑鼠移至根節點 → **Add New Project** — 執行建立專案精靈，新增子專案 |
-| **新增子專案（現有）** | 將滑鼠移至根節點 → **Add Existing Project** — 從同一資料夾中選取已轉換或建立的專案 |
-
 當目前只有**一個**子專案，新增第二個時會彈出提示，要求輸入**新的專案檔名稱**（預設為專案根目錄名稱）。確認後產生：
+
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5-2.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5-3.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
 | 檔案 | 內容 | 角色 |
 |------|------|------|
@@ -195,7 +172,7 @@ Hover 根節點即可顯示 **Add New Project** 與 **Add Existing Project** 按
 
 三個 `.ht32vs` 檔案共存，雙擊任一個即可切換。
 
-### 目錄結構
+#### 目錄結構
 
 ```
 MyProject/
@@ -211,9 +188,13 @@ MyProject/
         └── ...
 ```
 
-### 編譯與除錯
+#### 編譯與除錯
 
 點擊工具列的 **Build**、**Debug**、**Clean** 或 **Download** 時，會彈出 QuickPick 讓使用者選擇要對哪個子專案執行。**Build** 與 **Clean** 另提供 **Build All** / **Clean All**，依序執行所有子專案。編譯順序由 Project Tree 的排列決定，可透過**右鍵 → Move Up / Move Down** 調整。
+
+### 重新命名專案
+
+在 Project Tree 的根節點按右鍵 → **Rename Project File**，即可同時更名 `.ht32vs` 檔案並自動更新 Recent Projects 清單。
 
 ---
 

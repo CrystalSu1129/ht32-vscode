@@ -150,11 +150,7 @@ Every HT32 project is associated with a **`.ht32vs` project file** (stored insid
 
 ### Managing sub-projects
 
-A `.ht32vs` file can list multiple sub-project folders (e.g. `Project_IAP` and `Project_AP`). You can add or remove entries at any time without re-converting.
-
-**To use multi-project**, all sub-projects must reside in the **same `HT32_VSCode/` folder**. Hover over the root node in the Project Tree to reveal the **Add New Project** and **Add Existing Project** buttons.
-
-When a second project is added to a single-project, you will be prompted to enter a name for the new project file.
+A `.ht32vs` file can list multiple sub-project folders (e.g. `Project_IAP` and `Project_AP`). All sub-projects must reside in the **same `HT32_VSCode/` folder**.
 
 | Action | How |
 |--------|-----|
@@ -162,28 +158,6 @@ When a second project is added to a single-project, you will be prompted to ente
 | **Add Existing Project** | Hover the root node → **Add Existing Project** — select a project already converted or created in the same folder |
 | **Remove&nbsp;Project** | Right-click a project node → **Remove Project** — removes it from the list (files on disk are not deleted). Not available when only one project remains. |
 | **Move Up / Move Down** | Right-click a project node → **Move Up** or **Move Down** — adjusts the sub-project's compilation order in **Build All**. |
-
-### Renaming a project
-
-Right-click the root node in the Project Tree → **Rename Project File**. This renames the `.ht32vs` file on disk and updates the Recent Projects list automatically.
-
-
----
-
-<br>
-
-## Multi-Project
-
-**Multi-project** allows multiple independent sub-projects (e.g. `Project_IAP` and `Project_AP`) to share the same `HT32_VSCode/` folder and be managed together in the Project Tree.
-
-### How to set up multi-project
-
-Hover over the root node in the Project Tree to reveal the **Add New Project** and **Add Existing Project** buttons.
-
-| Action | How |
-|--------|-----|
-| **Add New Project** | Hover the root node → **Add New Project** — run the Create Project wizard to add a new sub-project |
-| **Add Existing Project** | Hover the root node → **Add Existing Project** — select a project already converted or created in the same folder |
 
 When the current project has only **one** sub-project and you add a second, a prompt appears asking for a **project file name** (defaults to the project root folder name). Confirming creates:
 
@@ -195,7 +169,7 @@ When the current project has only **one** sub-project and you add a second, a pr
 
 All three `.ht32vs` files coexist. Double-click any of them to switch views.
 
-### File structure
+#### File structure
 
 ```
 MyProject/
@@ -211,9 +185,13 @@ MyProject/
         └── ...
 ```
 
-### Building and debugging
+#### Building and debugging
 
 Clicking **Build**, **Debug**, **Clean**, or **Download** in the toolbar shows a QuickPick to select which sub-project to act on. **Build** and **Clean** also include **Build All** / **Clean All** that runs all sub-projects in sequence. The compilation order follows the Project Tree order — use **Move Up / Move Down** (right-click a project node) to adjust it.
+
+### Renaming a project
+
+Right-click the root node in the Project Tree → **Rename Project File**. This renames the `.ht32vs` file on disk and updates the Recent Projects list automatically.
 
 ---
 
