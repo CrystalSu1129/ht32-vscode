@@ -485,7 +485,7 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
       `set "ELF=%~dp0build\\${buildMeta.targetName}.elf"`,
       `set "OUT=%~dp0build\\${symsLdName}"`,
       `echo Generating symbol linker script "%OUT%" from "%ELF%" ...`,
-      `powershell -NoProfile -Command "$out = (& 'arm-none-eabi-nm' '--defined-only' '--extern-only' '-n' '%ELF%') | ForEach-Object { $f=$_.Trim() -split '\\s+'; if($f.Count -eq 3){'PROVIDE('+$f[2]+' = 0x'+$f[0]+');'} }; [IO.File]::WriteAllLines('%OUT%', $out, [Text.Encoding]::ASCII)"`,
+      `powershell -NoProfile -Command "$out = (& 'arm-none-eabi-nm' '--defined-only' '--extern-only' '-n' '%ELF%') | ForEach-Object { $f=$_.Trim() -split '\\s+'; if($f.Count -eq 3){$f[2]+' = 0x'+$f[0]+';'} }; [IO.File]::WriteAllLines('%OUT%', $out, [Text.Encoding]::ASCII)"`,
     ].join('\r\n');
     const batAbs = path.join(outDirAbs, 'gen_syms_ld.bat');
     fs.writeFileSync(batAbs, batContent, 'utf8');
