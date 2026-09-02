@@ -3,7 +3,7 @@
 import * as fs   from 'fs';
 import * as path from 'path';
 import { XMLParser } from 'fast-xml-parser';
-import { detectFpuPresentFromHeader, find49xGccDir, fwlRootFromSourcePath, fwlRootFromTemplate, is49xDevice, patchLdStackSections, specsFlags, makeSrcRule, makeSpacedSrcRule, buildMakefileText, enforceMinHeap, generateStackAnalysis, writeCCDbFromLists, logInfo, logWarn, bundledGnuDirFromFwlRoot } from './uv2make';
+import { detectFpuPresentFromHeader, find49xGccDir, fwlRootFromSourcePath, fwlRootFromTemplate, is49xDevice, patchLdStackSections, specsFlags, makeSrcRule, makeSpacedSrcRule, buildMakefileText, enforceMinHeap, generateStackAnalysis, writeCCDbFromLists, logInfo, logWarn, bundledGnuDirFromFwlRoot, FileOption } from './uv2make';
 import { readProjectSettings, writeProjectSettings } from './settingsWebview';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,10 +11,12 @@ import { readProjectSettings, writeProjectSettings } from './settingsWebview';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface Ht32IdeSource {
-  group:      string;    // Eclipse group name (e.g. "User", "Library", "CMSIS")
-  absPath:    string;    // resolved absolute path, forward slashes
-  headerOnly?: boolean;  // true = .h file (project tree only, not compiled)
-  missing?:   boolean;   // true = file not found on disk; kept in meta.json but excluded from build
+  group:        string;    // Eclipse group name (e.g. "User", "Library", "CMSIS")
+  absPath:      string;    // resolved absolute path, forward slashes
+  headerOnly?:  boolean;   // true = .h file (project tree only, not compiled)
+  missing?:     boolean;   // true = file not found on disk; kept in meta.json but excluded from build
+  excluded?:    boolean;   // true = "Exclude from build" in HT32-IDE (sourceEntries excluding=)
+  executeOnly?: boolean;   // true = -mpure-code per-file flag (HT32-IDE fileInfo with -mpure-code)
 }
 
 export interface Ht32IdeResult {
@@ -98,6 +100,63 @@ function listValues(opt: any): string[] {
 
 function findOpt(opts: any[], superClassSuffix: string): any {
   return opts.find((o: any) => String(o.superClass ?? '').includes(superClassSuffix));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-file settings parser (.cproject)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse HT32-IDE per-file settings from .cproject:
+ *   - Excluded from build: <entry excluding="file.c" name="folder"/> in <sourceEntries>
+ *   - Execute-only:        <fileInfo resourcePath="folder/file.c"> with -mpure-code compiler flag
+ *
+ * Returns Sets of "folder/filename" keys (both lowercased) for fast lookup.
+ */
+function parsePerFileSettings(cprojectPath: string): {
+  executeOnlyPaths: Set<string>;
+  excludedPaths:    Set<string>;
+} {
+  const parser = new XMLParser({
+    ignoreAttributes: false, attributeNamePrefix: '',
+    isArray: (name) => ['storageModule', 'cconfiguration', 'fileInfo', 'entry', 'tool', 'option'].includes(name),
+  });
+  const doc = parser.parse(fs.readFileSync(cprojectPath, 'utf8'));
+
+  const topModules: any[] = doc?.cproject?.storageModule ?? [];
+  const settingsMod = topModules.find((m: any) => m.moduleId === 'org.eclipse.cdt.core.settings');
+  const ccfg = (settingsMod?.cconfiguration ?? [])[0] ?? {};
+  const innerMods: any[] = ccfg?.storageModule ?? [];
+  const cdtBuild = innerMods.find((m: any) => m.moduleId === 'cdtBuildSystem');
+  const cfg = cdtBuild?.configuration ?? {};
+
+  // Execute-only: fileInfo with -mpure-code in compiler other flags
+  const executeOnlyPaths = new Set<string>();
+  for (const fi of (cfg.fileInfo ?? []) as any[]) {
+    const rp: string = String(fi.resourcePath ?? '').toLowerCase().replace(/\\/g, '/');
+    if (!rp) continue;
+    for (const t of (fi.tool ?? []) as any[]) {
+      const hasXO = ((t.option ?? []) as any[]).some((o: any) =>
+        String(o.superClass ?? '').includes('compiler.other') &&
+        String(o.value ?? '').includes('-mpure-code')
+      );
+      if (hasXO) { executeOnlyPaths.add(rp); break; }
+    }
+  }
+
+  // Excluded: sourceEntries entry with excluding="..." attribute
+  const excludedPaths = new Set<string>();
+  for (const entry of (cfg.sourceEntries?.entry ?? []) as any[]) {
+    const folder = String(entry.name ?? '').toLowerCase();
+    const excl   = String(entry.excluding ?? '');
+    if (!excl) continue;
+    for (const fname of excl.split('|')) {
+      const trimmed = fname.trim();
+      if (trimmed) excludedPaths.add(`${folder}/${trimmed.toLowerCase()}`);
+    }
+  }
+
+  return { executeOnlyPaths, excludedPaths };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -400,8 +459,30 @@ export function parseHt32IdeProject(projectDir: string): Ht32IdeResult {
   // include/linker paths stored as relative values in .cproject.
   const buildDir = path.join(projectDir, 'HT32');
 
-  const { projectName, sources, warnings } = parseProjectFile(projectPath);
+  const { projectName, sources: rawSources, warnings: projWarnings } = parseProjectFile(projectPath);
   const { artifactName, postbuildStep, icName, ...rest } = parseCProjectFile(cprojectPath, buildDir);
+  const { executeOnlyPaths, excludedPaths } = parsePerFileSettings(cprojectPath);
+
+  // Apply per-file settings from .cproject to sources
+  const extraWarnings: { message: string; file: string }[] = [];
+  const sources = rawSources.map(s => {
+    const key = `${s.group.toLowerCase()}/${path.basename(s.absPath).toLowerCase()}`;
+    const isExcluded    = excludedPaths.has(key);
+    const isExecuteOnly = executeOnlyPaths.has(key);
+    if (isExcluded) {
+      logWarn(`File excluded from build: ${path.basename(s.absPath)}`);
+      extraWarnings.push({ message: `"${path.basename(s.absPath)}" is excluded from build (HT32-IDE)`, file: cprojectPath });
+    }
+    if (isExecuteOnly) {
+      logInfo(`File set to execute-only (-mpure-code): ${path.basename(s.absPath)}`);
+    }
+    if (!isExcluded && !isExecuteOnly) return s;
+    const updated: Ht32IdeSource = { ...s };
+    if (isExcluded)    updated.excluded    = true;
+    if (isExecuteOnly) updated.executeOnly = true;
+    return updated;
+  });
+  const warnings = [...projWarnings, ...extraWarnings];
   // ${ProjName} 是 Eclipse CDT 變數，需替換成實際專案名稱
   const outputName = (artifactName || projectName).replace(/\$\{ProjName\}/g, projectName);
 
@@ -522,8 +603,8 @@ export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: 
   const toBgRel = (absPath: string): string =>
     path.relative(bgDir, absPath.replace(/\//g, path.sep)).replace(/\\/g, '/');
 
-  // Sources: compilable files only (exclude missing), converted to bgDir-relative
-  const compilable = result.sources.filter(s => /\.(c|cpp|s|S)$/i.test(s.absPath) && !s.headerOnly && !s.missing);
+  // Sources: compilable files only (exclude missing/excluded), converted to bgDir-relative
+  const compilable = result.sources.filter(s => /\.(c|cpp|s|S)$/i.test(s.absPath) && !s.headerOnly && !s.missing && !s.excluded);
   const bgRelSrcs  = compilable.map(s => toBgRel(s.absPath));
 
   // Linker scripts: bgDir-relative paths
@@ -562,13 +643,18 @@ export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildProjectMeta(result: Ht32IdeResult, wsRoot: string): {
-  projectName: string; groups: Record<string, string[]>;
+  projectName: string; groups: Record<string, string[]>; fileOptions?: Record<string, FileOption>;
 } {
   const groups: Record<string, string[]> = {};
+  const fileOptions: Record<string, FileOption> = {};
   for (const src of result.sources) {
     const rel = path.relative(wsRoot, src.absPath.replace(/\//g, path.sep));
     const p = path.isAbsolute(rel) ? src.absPath : rel.replace(/\\/g, '/');
     (groups[src.group] ||= []).push(p);
+    const fo: FileOption = {};
+    if (src.excluded)    fo.exclude = true;
+    if (src.executeOnly) fo.xo = true;
+    if (Object.keys(fo).length) fileOptions[p] = fo;
   }
   // Direct .a files from linker.otherobjs — same path normalisation as sources above.
   for (const absPath of result.extraLibFiles ?? []) {
@@ -576,7 +662,11 @@ export function buildProjectMeta(result: Ht32IdeResult, wsRoot: string): {
     const p = path.isAbsolute(rel) ? absPath : rel.replace(/\\/g, '/');
     (groups['Libraries'] ||= []).push(p);
   }
-  return { projectName: result.projectName, groups };
+  return {
+    projectName: result.projectName,
+    groups,
+    ...(Object.keys(fileOptions).length ? { fileOptions } : {}),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -742,7 +832,7 @@ export function writeHt32IdeLists(bgDir: string, result: Ht32IdeResult): void {
   const toBgRel = (absPath: string): string =>
     path.relative(bgDir, absPath.replace(/\//g, path.sep)).replace(/\\/g, '/');
 
-  const compilable = result.sources.filter(s => /\.(c|cpp|s|S)$/i.test(s.absPath) && !s.headerOnly && !s.missing);
+  const compilable = result.sources.filter(s => /\.(c|cpp|s|S)$/i.test(s.absPath) && !s.headerOnly && !s.missing && !s.excluded);
   const srcs    = compilable.map(s => toBgRel(s.absPath));
   const incsStr = ['-I../GNU_ARM', ...result.includePaths.map(p => `-I"${toBgRel(p)}"`)].join(' ');
   const defsStr = result.defines.map(d => `-D${d}`).join(' ');

@@ -193,6 +193,12 @@
         "icon": "$(file-add)"
       },
       {
+        "command": "ht32.treeFileSettings",
+        "category": "HT32",
+        "title": "File Settings...",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "ht32.treeRemoveFile",
         "category": "HT32",
         "title": "Remove from Group",
@@ -310,6 +316,11 @@
           "command": "ht32.treeRemoveGroup",
           "when": "view == ht32ProjectView && viewItem == group",
           "group": "1_edit@3"
+        },
+        {
+          "command": "ht32.treeFileSettings",
+          "when": "view == ht32ProjectView && viewItem == file",
+          "group": "1_edit@0"
         },
         {
           "command": "ht32.treeRemoveFile",

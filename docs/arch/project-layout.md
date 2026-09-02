@@ -49,7 +49,7 @@ PROJECT_ROOT/
 | `project.settings.json` | Per-project 設定 + conversion metadata：optimizationLevel / floatAbi / fpu / specs / extraCFlags / extraLDFlags / debugInterface / flashLoaders / includePaths / **cDefs / aDefs** / **mcu / targetName / ramOrigin / ramLength / deviceName / fwlibSeries / outputType**（粗體為 conversion metadata，原存於 `build.meta.json`；`cDefs` / `aDefs` 為 defines 快照，Settings Webview 編輯後寫回對應 .list 檔）| 轉換時寫入；Settings Webview 存檔時更新 |
 | `compile_commands.json` | Clang Compilation Database，給 clangd IntelliSense 使用；`make` 不讀此檔。每個 Project/ 各自有一份，包含完整 gcc 路徑、`--target=arm-none-eabi`、`-isystem` 旗標。**`.vscode/compile_commands.json` 不再產生**；clangd 讀取哪一份由 `.clangd` 的 `CompilationDatabase` 決定（TreeView 點選時切換）。 | 轉換 + TreeView 變動時重寫 |
 | `startup_ht32f5xxxx_gcc_NN.s` | GNU 格式啟動碼，定義 Stack_Size / Heap_Size，放入 `.stack`/`.heap` section | 只在轉換時從 FWLib 複製並 patch（`"aw",%nobits`；uVision 另外 sync Keil EQU 值） |
-| `ht32_op.c` | Holtek option byte 程式，從 template 複製 | 只在轉換時產生 |
+| `ht32_op.c` / `ht32_op2.c` | Holtek option byte 程式，從 template 複製（`handleKeilAsm` Rule 2，正則 `/^ht32_op.*\.s$/i`）；`ht32_op2.c` 僅部分 MCU 存在 | 只在轉換時產生（uVision，遇到對應 `.s` 時）|
 | `build/` | make 輸出目錄：`.o` 物件檔 + `<OutputName>.elf` | make 執行時產生 |
 
 ### 檔案依賴關係

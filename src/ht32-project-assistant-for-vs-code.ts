@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec as cpExec, ExecException, ExecOptions } from 'child_process';
 import { XMLParser } from 'fast-xml-parser';
-import { uv2make, regenerateMakefileFlags, parseUvmpw, generateCompileRuleSection, extractDeviceInfoFromUvprojx, getAllPdscPaths, generateStackAnalysis, buildCCDb, writeCCDbFromLists, buildMakefileText, fwlRootFromSourcePath } from './tools/uv2make';
+import { uv2make, regenerateMakefileFlags, parseUvmpw, generateCompileRuleSection, extractDeviceInfoFromUvprojx, getAllPdscPaths, generateStackAnalysis, buildCCDb, writeCCDbFromLists, buildMakefileText, fwlRootFromSourcePath, patchLinkerScriptRom } from './tools/uv2make';
 import { ensureToolchain, locateArmGcc, locateMake, cacheGccPathToSettings } from './tools/toolchain';
 import { openSettingsPanel, AutoLoaderEntry, readProjectSettings, writeProjectSettings, scanAdapters } from './tools/settingsWebview';
 import { openCreateProjectPanel, generateProjectFiles } from './tools/createProject';
@@ -408,15 +408,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (allConfigs.length === 0) {
         return vscode.window.showErrorMessage('No debug configurations found. Run "Generate Build & Debug Config" first.');
       }
-      // 過濾掉 Attach configs：單 project 時 allConfigs = [Debug, Attach]，
-      // 只顯示 Debug configs；多 project 時顯示各 project 的 Debug config 讓使用者選擇
-      const debugConfigs = allConfigs.filter((c: any) => !/attach/i.test(c.name ?? ''));
-      const configsToUse = debugConfigs.length > 0 ? debugConfigs : allConfigs;
-      let selectedConfig = configsToUse[0];
-      if (configsToUse.length > 1) {
-        const picked = await vscode.window.showQuickPick(configsToUse.map((c: any) => c.name), { placeHolder: 'Select debug configuration' });
+      let selectedConfig = allConfigs[0];
+      if (allConfigs.length > 1) {
+        const picked = await vscode.window.showQuickPick(allConfigs.map((c: any) => c.name), { placeHolder: 'Select debug configuration' });
         if (!picked) return;
-        selectedConfig = configsToUse.find((c: any) => c.name === picked) ?? configsToUse[0];
+        selectedConfig = allConfigs.find((c: any) => c.name === picked) ?? allConfigs[0];
       }
 
       // If a specific adapter serial was configured, verify it is still connected.
@@ -2950,9 +2946,7 @@ function buildHlmPreConfigCmds(
     }
   }
 
-  if (eraseMode !== 'none') {
-    cmds.push(`ht_flags ${eraseMode}`);
-  }
+  cmds.push(`ht_flags ${eraseMode}`);
   cmds.push(`set WORKAREASIZE ${workAreaSz}`);
   return cmds;
 }
@@ -3061,12 +3055,12 @@ function generatePyocdFiles(
   workAreaSize: number,     // from Settings.ini; limits RAM used by flash algorithm
   internalFlashEnd: number, // from parseMcuCfg; used for RAM work area reference
   smartFlash: boolean,      // pyocd smart_flash: skip unchanged pages
-  eraseMode: string,        // erase_chip / erase_sector / none → chip / sector / skip
+  eraseMode: string,        // 'erase_chip' → chip / 'erase_sector' → sector
 ): void {
   // Always generate pyocd_user.py: needed for RAM work area setup and EXT flash region
   // registration via _add_ext_region (when ext loaders are configured).
   const userScriptAbs = path.join(outDir, 'pyocd_user.py').replace(/\\/g, '/');
-  const eraseYaml = eraseMode === 'erase_chip' ? 'chip' : eraseMode === 'none' ? 'skip' : 'sector';
+  const eraseYaml = eraseMode === 'erase_chip' ? 'chip' : 'sector';
   const yamlLines = [
     'connect_mode: under-reset',
     `smart_flash: ${smartFlash}`,
@@ -3409,6 +3403,7 @@ function buildOpenocdServerConfigs(params: {
     name:    attachName,
     request: 'attach',
     ...base,
+    openOCDPreConfigLaunchCommands: hlmCmds,
     openOCDLaunchCommands: [
       ...adapterCmds,
       ...resetCmds,
@@ -3688,9 +3683,10 @@ async function generateTasksAndLaunch(
     bgRamLength = bgRamLength || bgSettings.ramLength;
     bgDevice    = bgDevice    || bgSettings.deviceName;
     bgMcu       = bgMcu       || bgSettings.mcu;
-    if (!bgElfPath && bgSettings.targetName) {
+    const effectiveTargetName = bgSettings.outputName?.trim() || bgSettings.targetName;
+    if (!bgElfPath && effectiveTargetName) {
       const ext = bgSettings.outputType === 'lib' ? '.a' : '.elf';
-      bgElfPath = bgElfOf(bg, bgSettings.targetName, ext);
+      bgElfPath = bgElfOf(bg, effectiveTargetName, ext);
     }
 
     // Final fallback（只對 active project 做，因為 uvprojx 掃描只能找到第一個）
@@ -4158,6 +4154,7 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
         scanfFloat:            bgProjSettings.scanfFloat           ?? false,
         cDefs:           bgProjSettings.cDefs,
         aDefs:           bgProjSettings.aDefs,
+        outputName:      bgProjSettings.outputName?.trim() || undefined,
       });
       writeCCDbFromLists(bgDir, {
         armCore:      bgProjSettings.mcu,
@@ -4324,6 +4321,7 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
         printfFloat:       bgProjSettings.printfFloat        ?? false,
         scanfFloat:        bgProjSettings.scanfFloat         ?? false,
         includePaths:      bgProjSettings.includePaths       ?? [],
+        outputName:        bgProjSettings.outputName?.trim() || undefined,
       });
     } catch { /* Makefile might not exist for new projects mid-creation */ }
   }
@@ -4344,7 +4342,17 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
     logWarn(`updateProjectMeta: compile_commands.json update failed: ${e}`);
   }
 
-  // 6. Invalidate stale ELF/bin so Make is forced to re-link on next build.
+  // 6. Patch linker script ROM regions for files with rom fileOption
+  if (meta.linkerScripts?.[0]) {
+    const ldPath = path.resolve(buildGenDir, meta.linkerScripts[0]);
+    try {
+      patchLinkerScriptRom(ldPath, meta.fileOptions);
+    } catch (e: any) {
+      logWarn(`updateProjectMeta: linker script ROM patch failed: ${e?.message ?? e}`);
+    }
+  }
+
+  // 7. Invalidate stale ELF/bin so Make is forced to re-link on next build.
   //    Without this, Make sees all remaining .o files are newer than the ELF
   //    and skips re-linking, leaving the old binary (with removed files still
   //    linked in) intact.
@@ -4428,6 +4436,17 @@ function registerTreeEditCommands(
       existing.add(rel);
     }
     meta.groups[groupName] = Array.from(existing);
+
+    // .ld files also go into linkerScripts[] (bgDir-relative) so Makefile picks them up with -T
+    const ldUris = uris.filter(u => u.fsPath.toLowerCase().endsWith('.ld'));
+    if (ldUris.length) {
+      const existingLd = new Set<string>(meta.linkerScripts ?? ['../GNU_ARM/linker.ld']);
+      for (const u of ldUris) {
+        existingLd.add(path.relative(buildGenDir, u.fsPath).replace(/\\/g, '/'));
+      }
+      meta.linkerScripts = Array.from(existingLd);
+    }
+
     updateProjectMeta(buildGenDir, meta);
     tree.refresh();
     const groupItem = new vscode.TreeItem(groupName, vscode.TreeItemCollapsibleState.Expanded);
@@ -4448,7 +4467,7 @@ function registerTreeEditCommands(
       canSelectMany: true,
       canSelectFolders: false,
       openLabel: 'Add Existing Files to Group',
-      filters: { 'Source & Library Files': ['c', 'C', 's', 'S', 'cpp', 'a', 'o', 'obj'] },
+      filters: { 'Source & Library Files': ['c', 'C', 's', 'S', 'cpp', 'a', 'o', 'obj', 'ld'] },
     });
     if (!uris || uris.length === 0) return;
     await addFilesToGroupImpl(buildGenDir, groupName, uris);
@@ -4508,6 +4527,11 @@ function registerTreeEditCommands(
     const meta = readProjectMeta(buildGenDir);
     if (!meta?.groups?.[groupName]) return;
     meta.groups[groupName] = meta.groups[groupName].filter((f: string) => f !== filePath);
+    // If the removed file is a .ld, also remove it from linkerScripts[]
+    if (filePath.toLowerCase().endsWith('.ld') && meta.linkerScripts) {
+      const ldRel = path.relative(buildGenDir, path.resolve(path.dirname(path.dirname(buildGenDir)), filePath)).replace(/\\/g, '/');
+      meta.linkerScripts = meta.linkerScripts.filter((s: string) => s !== ldRel);
+    }
     updateProjectMeta(buildGenDir, meta);
     tree.refresh();
   }));
@@ -4567,6 +4591,110 @@ function registerTreeEditCommands(
   };
   ctx.subscriptions.push(vscode.commands.registerCommand('ht32.treeMoveProjectUp',   (item: vscode.TreeItem) => moveProject(item, -1)));
   ctx.subscriptions.push(vscode.commands.registerCommand('ht32.treeMoveProjectDown', (item: vscode.TreeItem) => moveProject(item,  1)));
+
+  // Per-file Settings (right-click on file node)
+  ctx.subscriptions.push(vscode.commands.registerCommand('ht32.treeFileSettings', async (item: vscode.TreeItem) => {
+    const parsed = parseFileItemId(item.id || '');
+    if (!parsed) return;
+    const { buildGenDir, filePath } = parsed;
+
+    const meta = readProjectMeta(buildGenDir);
+    if (!meta) return;
+
+    type FO = { exclude?: true; xo?: true; rom?: { origin: string; length: string } };
+    const fo: FO = { ...(meta.fileOptions?.[filePath] ?? {}) };
+    const fileName = path.basename(filePath);
+
+    // Parse available ROM regions from the linker script
+    const romRegions = ldRomRegions(buildGenDir, meta);
+
+    const numOrigin = (v: string) => /^0x/i.test(v) ? parseInt(v, 16) : parseInt(v, 10);
+    const regionNameFor = (rom: { origin: string; length: string } | undefined): string => {
+      if (!rom) return 'default (FLASH)';
+      const n = numOrigin(rom.origin);
+      return romRegions.find(r => numOrigin(r.origin) === n)?.name ?? `0x${n.toString(16)}`;
+    };
+
+    while (true) {
+      const exIcon = fo.exclude ? '$(check)' : '$(blank)';
+      const xoIcon = fo.xo     ? '$(check)' : '$(blank)';
+      const romLabel = `ROM: ${regionNameFor(fo.rom)}`;
+
+      type ActionItem = vscode.QuickPickItem & { id: string };
+      const action = await vscode.window.showQuickPick<ActionItem>([
+        { label: `${exIcon} Exclude from build`,       id: 'exclude',  description: fo.exclude ? 'enabled' : '' },
+        { label: `${xoIcon} Execute-only (-mpure-code)`,id: 'xo',      description: fo.xo ? 'enabled' : '' },
+        { label: `$(database) ${romLabel}`,             id: 'rom',      description: 'select region...' },
+        { label: '$(check) Apply',                      id: 'apply',    description: 'save and regenerate Makefile' },
+        { label: '$(discard) Cancel',                   id: 'cancel' },
+      ], { title: `File Settings: ${fileName}`, placeHolder: 'Select a setting to toggle or Apply to save' });
+
+      if (!action || action.id === 'cancel') return;
+
+      if (action.id === 'exclude') {
+        fo.exclude = fo.exclude ? undefined : true;
+      } else if (action.id === 'xo') {
+        fo.xo = fo.xo ? undefined : true;
+      } else if (action.id === 'rom') {
+        type RegionItem = vscode.QuickPickItem & { rom: FO['rom'] };
+        const currentN = fo.rom ? numOrigin(fo.rom.origin) : -1;
+        const regionItems: RegionItem[] = [
+          { label: '$(dash) Default (FLASH)', description: 'use primary flash region', rom: undefined, picked: !fo.rom },
+          ...romRegions.map(r => ({
+            label: `$(database) ${r.name}`,
+            description: `ORIGIN = ${r.origin}, LENGTH = ${r.length}`,
+            rom: { origin: r.origin, length: r.length } as FO['rom'],
+            picked: numOrigin(r.origin) === currentN,
+          })),
+        ];
+        const picked = await vscode.window.showQuickPick<RegionItem>(regionItems, {
+          title: `ROM Region for ${fileName}`,
+          placeHolder: 'Choose which memory region to place this file\'s code in',
+        });
+        if (picked !== undefined) fo.rom = picked.rom;
+      } else if (action.id === 'apply') {
+        break;
+      }
+    }
+
+    // Write back to meta.fileOptions
+    const cleaned: FO = {};
+    if (fo.exclude) cleaned.exclude = true;
+    if (fo.xo)     cleaned.xo = true;
+    if (fo.rom)    cleaned.rom = fo.rom;
+
+    if (!meta.fileOptions) meta.fileOptions = {};
+    if (Object.keys(cleaned).length) {
+      meta.fileOptions[filePath] = cleaned;
+    } else {
+      delete meta.fileOptions[filePath];
+    }
+    if (!Object.keys(meta.fileOptions).length) delete meta.fileOptions;
+
+    updateProjectMeta(buildGenDir, meta);
+    tree.refresh();
+  }));
+}
+
+/** Parse ROM (non-writeable) MEMORY regions from the project's linker script */
+function ldRomRegions(buildGenDir: string, meta: Meta): Array<{ name: string; origin: string; length: string }> {
+  const ldRel = meta.linkerScripts?.[0];
+  if (!ldRel) return [];
+  const ldPath = path.join(buildGenDir, ldRel);
+  if (!fs.existsSync(ldPath)) return [];
+  try {
+    const ld = fs.readFileSync(ldPath, 'utf8');
+    const re = /^\s*(\w+)\s*\(([^)]*)\)\s*:\s*ORIGIN\s*=\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*LENGTH\s*=\s*([^\n,}]+)/gm;
+    const results: Array<{ name: string; origin: string; length: string }> = [];
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(ld)) !== null) {
+      const flags = m[2];
+      if (!flags.includes('w')) {  // no write flag → ROM
+        results.push({ name: m[1], origin: m[3].trim(), length: m[4].trim() });
+      }
+    }
+    return results;
+  } catch { return []; }
 }
 
 /** ====== Recent Projects ====== */
@@ -4834,7 +4962,21 @@ class ProjectTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         it.tooltip      = f;
         // Show subdirectory as description (e.g. "board/" for "board/lv_port_disp.c")
         const dir = path.dirname(f);
-        if (dir && dir !== '.') it.description = dir + '/';
+        const descParts: string[] = [];
+        if (dir && dir !== '.') descParts.push(dir + '/');
+
+        const fo = proj.meta?.fileOptions?.[f];
+        if (fo?.exclude) {
+          it.iconPath = new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
+          descParts.push('[excluded]');
+        } else {
+          const tags: string[] = [];
+          if (fo?.xo)  tags.push('xo');
+          if (fo?.rom) tags.push('rom');
+          if (tags.length) descParts.push(`[${tags.join(',')}]`);
+        }
+        if (descParts.length) it.description = descParts.join(' ');
+
         if (!/\.(o|a|obj|lib)$/i.test(f)) {
           it.command = { command: 'vscode.open', title: 'Open', arguments: [it.resourceUri] };
         }

@@ -26,6 +26,8 @@
 | [arch/maintenance.md](arch/maintenance.md) | 新增 MCU checklist（DFP/pack/HLM/cfg）、HT32-IDE 改版流程、pyOCD 架構（uv auto-install/pack 選取/產生檔案）、測試腳本、Bundled Make、Marketplace 發布 |
 | [arch/fwlib-bat-integration.md](arch/fwlib-bat-integration.md) | FWLib bat 整合分析：`_CreateProject.bat` gsar 操作、HT32-IDE vs HT32_VSCode placeholder 對照表、template 目錄規劃 |
 | [arch/tasks-json-shell.md](arch/tasks-json-shell.md) | tasks.json shell 類型設計：`type: 'process'` vs `type: 'shell'` + `quoting: 'strong'`；各 task 選擇理由；路徑含特殊字元（`(~!%^)`）的 PowerShell 相容問題 |
+| [arch/file-settings.md](arch/file-settings.md) | Per-file Settings（Exclude / Execute-only / ROM Region）：meta.json 格式、Makefile 效果、patchLinkerScriptRom、Convert uVision vs HT32-IDE 自動讀取差異 |
+| [arch/settings-webview.md](arch/settings-webview.md) | Settings Webview 所有選項的資料流對照表：Compiler 設定 → Makefile / compile_commands.json；Debugger 設定 → tasks.json / launch.json |
 
 ---
 

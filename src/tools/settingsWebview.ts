@@ -122,6 +122,8 @@ export function readProjectSettings(bgDir: string): ProjectSettings {
       if (!['openocd', 'pyocd'].includes(s.serverType)) { s.serverType = 'pyocd'; }
       // Migrate removed level 0 (was ERROR-only, breaks pyocd server detection)
       if (s.openocdDebugLevel < 1) { s.openocdDebugLevel = 1; }
+      // Migrate removed 'none' erase mode (flash always requires sector erase)
+      if (s.eraseMode === 'none') { s.eraseMode = 'erase_sector'; }
       // Backward compat: old projects wrote meta fields only to build.meta.json
       if (!s.mcu) {
         try {
@@ -1416,7 +1418,6 @@ ${titleHtml}
   <select id="${id('eraseMode')}">
     ${opt('erase_sector', s.eraseMode, 'Erase Sectors (default)')}
     ${opt('erase_chip',   s.eraseMode, 'Erase Full Chip')}
-    ${opt('none',         s.eraseMode, 'Do Not Erase')}
   </select>
 </div>
 ${availableFlms.length > 0 || autoLoaders.length > 0 ? `

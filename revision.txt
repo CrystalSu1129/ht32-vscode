@@ -6,6 +6,11 @@ v0.1.8 摘要
 --------------------------------------------------------------------------------
 
 新功能
+- 每個檔案獨立設定（Per-file Settings）：右鍵 TreeView 檔案節點 → File Settings...
+  支援三項：Exclude from build（不編譯）、Execute-only（-mpure-code）、ROM Region 指派
+  Convert uVision 時自動讀取 Keil 原有設定（IncludeInBuild / useXO / RVCTCodeConst）
+  Linker script 自動 patch：ROM 指派在 .text 之前插入對應 output section
+  TreeView 視覺標示：excluded 檔顯示 $(circle-slash) 灰色 icon，其餘加 [xo][rom] tag
 - FWLib project_template/ 缺失 fallback：三條路徑（Convert uVision / HT32-IDE / Create Project）
   均自動 fallback 到 bundled templates/{familyTag}/GNU_ARM/，有 library/ 結構即可轉換
 - Create Project 系列判斷改與 Convert 一致：改掃 library/HT32*xxxx_Driver/ 目錄，
@@ -21,6 +26,8 @@ v0.1.8 摘要
 - 檔案產生 log：轉換時所有寫出的檔案顯示於 Output Channel
 
 修正
+- Erase Mode 移除「Do Not Erase」選項：pyocd / OpenOCD GDB server 均不支援略過 erase，
+  舊值 'none' 自動 migrate 為 'erase_sector'
 - Toolchain Detection 大幅改寫：移除深度遞迴掃描（原本阻塞 activation）、加入 session cache
 - 工具缺失通知改為詢問式，不再靜默自動安裝
 - OpenOCD TCL 路徑：extensionRoot 改用 forward slash，修正 HLM 路徑損毀
@@ -41,6 +48,29 @@ v0.1.8 摘要
 
 v0.1.8  (from v0.1.7)
 --------------------------------------------------------------------------------
+
+[Per-file Settings]
+- 新增 ht32.treeFileSettings 指令：右鍵 TreeView 檔案節點 → File Settings...
+  以迴圈式 QuickPick 呈現目前設定狀態（checkmark 顯示已啟用項目），選 Apply 存檔並重產 Makefile
+- 支援三項 per-file 設定：
+  Exclude from build：檔案保留在 groups（TreeView 可見），不加入 sources.list / Makefile SRCS
+  Execute-only：對該 .c 加 -mpure-code 編譯旗標（防止逆向，需 MPU 配合）
+  ROM Region：從 linker script 解析可用 ROM region 供選擇；自動在 .text section 前插入
+               `.ht32rom_<name> : { *<file>.o(.text* .rodata*) } > <region>`
+               目標 region 已存在（如 SPIM）時直接重用，不重複新增 MEMORY 行
+- Convert uVision：自動讀取 Keil per-file XML（FileOption 節點）
+  IncludeInBuild=0 → exclude；useXO=1 → xo；RVCTCodeConst=5 → rom（IROM2/SPIM 位址）
+  OCR_RVCT 位址表由 extractOcrRvctMap() 從 uvprojx 第一個 Target 解析
+- patchLinkerScriptRom()：負責 linker script 的加/移除
+  Step 1：移除所有舊有 HT32ROM_ MEMORY 行與 .ht32rom_ SECTIONS block
+  Step 2：解析現有 MEMORY regions（origin → name Map），避免新增重疊 region
+  Step 3：對新 region 以 hex 格式寫入 MEMORY（ORIGIN=0x...，LENGTH=0x...），插在 RAM 之前
+  Step 4：在 .text section 前插入 output section，region 名稱優先使用已存在的（如 SPIM）
+- TreeView 視覺標示：
+  excluded 檔：ThemeIcon('circle-slash', disabledForeground) + description 加 [excluded]
+  xo / rom 檔：description 加 [xo] / [rom] tag（保留原 file type icon）
+- ldRomRegions() helper：解析 linker script MEMORY 區塊，回傳所有無 'w' flag 的 region
+  供 ROM Region QuickPick 選單動態填入（FLASH、SPIM 等），並標示目前已選項目
 
 [FWLib Bundled Templates Fallback]
 - 三條轉換路徑（Convert uVision / Convert HT32-IDE / Create Project）在找到 FWLib root

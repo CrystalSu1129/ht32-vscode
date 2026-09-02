@@ -88,7 +88,8 @@ Extension 在 `templates/` 內 bundle 了各標準系列的 `project_template/IP
 | 路徑 | 用途 |
 |---|---|
 | `{familyTag}/GNU_ARM/startup_ht32Xxxxx_gcc_NN.s` | startup（多個 variant，對應不同 flash/ram 分組）|
-| `{familyTag}/GNU_ARM/ht32_op.c` | IAP / option bytes |
+| `{familyTag}/GNU_ARM/ht32_op.c` | IAP / option bytes（`handleKeilAsm` Rule 2 複製）|
+| `{familyTag}/GNU_ARM/ht32_op2.c` | 進階 option bytes（部分 MCU 有，如 F4xxxx）|
 | `{familyTag}/GNU_ARM/linker.ld` | linker script template |
 | `{familyTag}/main.c` | 範例 main |
 | `{familyTag}/ht32XXXXX_01_it.c` | interrupt handler 範例 |
@@ -109,7 +110,7 @@ Extension 在 `templates/` 內 bundle 了各標準系列的 `project_template/IP
 
 | 觸發條件 | 需更新的內容 |
 |---|---|
-| FWLib 升版，`project_template/IP/Example/GNU_ARM/` 有改動 | 對應系列的 `templates/{familyTag}/GNU_ARM/`（startup .s、ht32_op.c、linker.ld）|
+| FWLib 升版，`project_template/IP/Example/GNU_ARM/` 有改動 | 對應系列的 `templates/{familyTag}/GNU_ARM/`（startup .s、ht32_op.c、ht32_op2.c（若存在）、linker.ld）|
 | FWLib 升版，`project_template/IP/Example/` 範例檔有改動 | 對應系列的 `templates/{familyTag}/`（main.c、*_it.c、conf.h 等）|
 | 新增系列（例如新的 L 系列晶片）| 新增對應 `templates/{newTag}/GNU_ARM/` 目錄並複製樣板 |
 | `ht32_stack_analysis.c` / `syscalls.c` 有改動 | `templates/GNU_ARM/`（共用，各系列皆用）|

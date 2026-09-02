@@ -105,6 +105,7 @@ type Extracted = {
   prebuiltWarnings?: string[];  // .o/.lib/.a 檔案（Keil 編出，GNU 無法使用）
   gnuArmTemplate?: string;      // resolveGnuArmDir() 的結果（FWLib gcc 或 GNU_ARM 目錄）
   fwlibRoot?: string;           // FWLib 根目錄絕對路徑
+  symdefsOutputFile?: string;   // from --symdefs=xxx.o in <LDads><Misc>
 };
 
 
@@ -315,6 +316,14 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
   const infoRaw = extractProjectInfo(doc, projDir, fallbackName, outDirAbs, opts.extPath, gnuArmRoot);
   const info = remapInfoToOutDir(infoRaw, projDir, outDirAbs, convWarnings);
 
+  if (infoRaw.symdefsOutputFile) {
+    const symsLdName = path.basename(infoRaw.symdefsOutputFile, '.o') + '.ld';
+    convWarnings.push({
+      message: `--symdefs detected: "gen_syms_ld.bat" (post-build) will produce "${symsLdName}". Dependent projects should include this file as a linker script.`,
+      file: opts.uvprojx,
+    });
+  }
+
   // Warn if toolset is neither ARM-ADS (standard Keil armcc/armclang) nor ARM-GNU (GCC)
   const toolsetName: string = (() => {
     const t = doc.Project?.Targets?.Target;
@@ -464,6 +473,28 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
   const uvPostBuildCmd = extractUvAfterMakeCmd(
     doc, projDir, path.dirname(outDirAbs), outDirAbs, buildMeta.targetName, deviceName ?? '', convWarnings,
   );
+
+  // --symdefs detected: generate gen_syms_ld.bat in outDirAbs, set as post-build cmd.
+  // The bat uses %~dp0 (its own directory) so it always finds the correct ELF/output paths.
+  let symdefsPostBuildCmd = '';
+  if (infoRaw.symdefsOutputFile) {
+    const symsBase    = path.basename(infoRaw.symdefsOutputFile, '.o');
+    const symsLdName  = symsBase + '.ld';
+    const batContent  = [
+      '@echo off',
+      `set "ELF=%~dp0build\\${buildMeta.targetName}.elf"`,
+      `set "OUT=%~dp0build\\${symsLdName}"`,
+      `echo Generating symbol linker script "%OUT%" from "%ELF%" ...`,
+      `powershell -NoProfile -Command "$out = (& 'arm-none-eabi-nm' '--defined-only' '--extern-only' '-n' '%ELF%') | ForEach-Object { $f=$_.Trim() -split '\\s+'; if($f.Count -eq 3){'PROVIDE('+$f[2]+' = 0x'+$f[0]+');'} }; [IO.File]::WriteAllLines('%OUT%', $out, [Text.Encoding]::ASCII)"`,
+    ].join('\r\n');
+    const batAbs = path.join(outDirAbs, 'gen_syms_ld.bat');
+    fs.writeFileSync(batAbs, batContent, 'utf8');
+    // Use backslash path in cmd /c "..." so PowerShell→cmd.exe path parsing is unambiguous
+    const batRel = path.relative(path.dirname(outDirAbs), batAbs);  // natural backslashes
+    symdefsPostBuildCmd = `cmd /c "${batRel}"`;
+  }
+
+  const finalPostBuildCmd = [uvPostBuildCmd, symdefsPostBuildCmd].filter(Boolean).join(' && ');
   writeProjectSettings(outDirAbs, {
     ...readProjectSettings(outDirAbs),
     mcu:        buildMeta.mcu,
@@ -473,7 +504,7 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
     deviceName: buildMeta.deviceName,
     ...(info.defines?.length ? { cDefs: info.defines } : {}),
     ...(info.asmDefines?.length ? { aDefs: info.asmDefines } : {}),
-    ...(uvPostBuildCmd ? { postBuildCmd: uvPostBuildCmd } : {}),
+    ...(finalPostBuildCmd ? { postBuildCmd: finalPostBuildCmd } : {}),
   });
 
   // Collect implicitly-added sources (not from .uvprojx groups) to be added to the startup
@@ -724,7 +755,7 @@ function patchStartupFromKeil(keilPath: string, gccTemplatePath: string, outPath
 /**
  * 把 Keil 的 .s 檔轉成實際要用的 GCC 檔案。
  * - startup_xxxxxxxx_nn.s → startup_xxxxxxxx_gcc_nn.s (from templates/M3_GNU_ARM or M0_GNU_ARM → build-gen)
- * - ht32_op.s             → ht32_op.c              (from templates/M3_GNU_ARM or M0_GNU_ARM → build-gen)
+ * - ht32_op*.s            → ht32_op*.c             (from templates/M3_GNU_ARM or M0_GNU_ARM → build-gen)
  *
  * @param relPath  uvproj 裡的相對路徑（相對於 MDK_ARMv5 專案根目錄）
  * @param projectRoot MDK_ARMv5 專案根 (也就是有 uvprojx 的那層)
@@ -1494,20 +1525,21 @@ function handleKeilAsm(
     return path.relative(projectRoot, gccDst).replace(/\\/g, '/');
   }
 
-  // 規則 2: ht32_op.s → ht32_op.c（template，C file → 放 GNU_ARM/）
-  if (base === 'ht32_op.s') {
-    if (!templateRoot) { logWarn(`handleKeilAsm: ht32_op.s skipped — no templateRoot`); return null; }
-    const src = path.join(templateRoot, 'ht32_op.c');
-    const dst = path.join(gnuRoot, 'ht32_op.c');
+  // 規則 2: ht32_op*.s → 同名 .c（template，C file → 放 GNU_ARM/）
+  if (/^ht32_op.*\.s$/i.test(base)) {
+    const cName = base.replace(/\.s$/i, '.c');
+    if (!templateRoot) { logWarn(`handleKeilAsm: ${base} skipped — no templateRoot`); return null; }
+    const src = path.join(templateRoot, cName);
+    const dst = path.join(gnuRoot, cName);
     let effectiveSrc: string | undefined = fs.existsSync(src) ? src : undefined;
     if (!effectiveSrc && extPath) {
       // templateRoot = {FWLib}/project_template/IP/Example/GNU_ARM → fwlRoot is 4 levels up
       const fwlRoot = path.resolve(templateRoot, '..', '..', '..', '..');
       const bundledDir = bundledGnuDirFromFwlRoot(fwlRoot, extPath);
-      const cand = bundledDir ? path.join(bundledDir, 'ht32_op.c') : undefined;
-      if (cand && fs.existsSync(cand)) { effectiveSrc = cand; logInfo(`handleKeilAsm: ht32_op.c from bundled templates (FWLib missing)`); }
+      const cand = bundledDir ? path.join(bundledDir, cName) : undefined;
+      if (cand && fs.existsSync(cand)) { effectiveSrc = cand; logInfo(`handleKeilAsm: ${cName} from bundled templates (FWLib missing)`); }
     }
-    if (!effectiveSrc) throw new Error(`ht32_op.c template not found: ${src}`);
+    if (!effectiveSrc) throw new Error(`${cName} template not found: ${src}`);
     fs.mkdirSync(gnuRoot, { recursive: true });
     fs.copyFileSync(effectiveSrc, dst);
     return path.relative(projectRoot, dst).replace(/\\/g, '/');
@@ -1966,6 +1998,13 @@ function extractProjectInfo(doc: any, projDir: string, fallbackName: string, bui
     undefined;
   const scatter = scatterRaw ? resolveRel(projDir, scatterRaw) : undefined;
 
+  // ===== --symdefs detection (L0 of FLASH Partial Lock) =====
+  const ldMisc: string =
+    first?.TargetOption?.TargetArmAds?.LDads?.Misc ??
+    first?.TargetOption?.TargetArmAds?.Ldads?.Misc ?? '';
+  const symdefsMatch = ldMisc.match(/--symdefs=(\S+)/);
+  const symdefsOutputFile = symdefsMatch ? symdefsMatch[1] : undefined;
+
   // CreateLib=1 → 產出靜態函式庫 (.a)
   const createLib = first?.TargetOption?.TargetCommonOption?.CreateLib;
   const isLibrary = createLib === 1 || createLib === '1';
@@ -1986,6 +2025,7 @@ function extractProjectInfo(doc: any, projDir: string, fallbackName: string, bui
     prebuiltWarnings: prebuiltWarnings.length ? prebuiltWarnings : undefined,
     gnuArmTemplate: templateRoot,
     fwlibRoot: templateRoot ? fwlRootFromTemplate(templateRoot) : undefined,
+    ...(symdefsOutputFile ? { symdefsOutputFile } : {}),
   };
 }
 
@@ -2475,6 +2515,106 @@ export function lookupMemoryFromPdsc(deviceName: string, extPath: string, extraP
     } catch { /* try next */ }
   }
   return {};
+}
+
+/**
+ * Patch a GNU LD linker script to add/remove per-file ROM region assignments.
+ * For each file with a `rom` FileOption:
+ *   - If the target ORIGIN already exists as a named MEMORY region, reuses that name.
+ *   - Otherwise adds `HT32ROM_<name> (rx) : ORIGIN = 0x..., LENGTH = 0x...` before RAM.
+ *   - Adds `.ht32rom_<name> : { *file.o(.text* .rodata*) } > <region>` before .text.
+ * Calling with empty/undefined fileOptions removes all previously-added HT32ROM_ entries.
+ */
+export function patchLinkerScriptRom(
+  ldPath: string,
+  fileOptions: Record<string, { rom?: FileRomOption }> | undefined
+): void {
+  if (!fs.existsSync(ldPath)) {
+    logWarn(`patchLinkerScriptRom: linker script not found: ${ldPath}`);
+    return;
+  }
+
+  let ld = fs.readFileSync(ldPath, 'utf8');
+
+  // ── Step 1: Remove all existing HT32ROM_ entries ─────────────────────────
+  ld = ld.replace(/^[ \t]*HT32ROM_\w+[ \t]*\([^)]*\)[ \t]*:[^\n]*\n/gm, '');
+  ld = ld.replace(/\n[ \t]*\.ht32rom_\w+[ \t]*:[ \t]*\{[^}]*\}[ \t]*>[ \t]*\w+[^\n]*/g, '');
+
+  // ── Step 2: Collect files with rom settings ───────────────────────────────
+  type RomFile = { objName: string; safeName: string; rom: FileRomOption };
+  const romFiles: RomFile[] = [];
+  if (fileOptions) {
+    for (const [metaPath, fo] of Object.entries(fileOptions)) {
+      if (!fo.rom) continue;
+      const baseName = path.basename(metaPath, path.extname(metaPath));
+      const safeName = baseName.replace(/[^a-zA-Z0-9_]/g, '_');
+      const objName  = baseName + '.o';
+      romFiles.push({ objName, safeName, rom: fo.rom });
+    }
+  }
+
+  if (romFiles.length === 0) {
+    fs.writeFileSync(ldPath, ld, 'utf8');
+    logInfo(`patchLinkerScriptRom: removed stale HT32ROM_ entries from ${path.basename(ldPath)}`);
+    return;
+  }
+
+  // ── Step 3: Parse existing MEMORY regions (name → origin as number) ───────
+  const existingRegions = new Map<number, string>(); // origin → region name
+  const memRegionRe = /^\s*(\w+)\s*\([^)]*\)\s*:\s*ORIGIN\s*=\s*(0x[0-9a-fA-F]+|\d+)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = memRegionRe.exec(ld)) !== null) {
+    const name   = m[1];
+    const origin = m[2].startsWith('0x') || m[2].startsWith('0X')
+      ? parseInt(m[2], 16) : parseInt(m[2], 10);
+    existingRegions.set(origin, name);
+  }
+
+  const toHex = (val: string): string => {
+    if (/^0x/i.test(val)) return val.toLowerCase();
+    const n = parseInt(val, 10);
+    return isNaN(n) ? val : `0x${n.toString(16)}`;
+  };
+
+  // ── Step 4: Insert new MEMORY regions (only when origin not already present)
+  const newMemLines: string[] = [];
+  for (const { safeName, rom } of romFiles) {
+    const origin = /^0x/i.test(rom.origin)
+      ? parseInt(rom.origin, 16) : parseInt(rom.origin, 10);
+    if (!existingRegions.has(origin)) {
+      newMemLines.push(
+        `HT32ROM_${safeName} (rx) : ORIGIN = ${toHex(rom.origin)}, LENGTH = ${toHex(rom.length)}`
+      );
+      existingRegions.set(origin, `HT32ROM_${safeName}`);
+    }
+  }
+
+  if (newMemLines.length > 0) {
+    const memBlock = newMemLines.join('\n') + '\n';
+    if (/^[ \t]*RAM[ \t]*\(/m.test(ld)) {
+      ld = ld.replace(/^([ \t]*RAM[ \t]*\()/m, `${memBlock}$1`);
+    } else {
+      logWarn(`patchLinkerScriptRom: RAM region not found in ${path.basename(ldPath)}; MEMORY entries skipped`);
+    }
+  }
+
+  // ── Step 5: Insert SECTIONS output sections before .text ─────────────────
+  // Use existing region name when the origin matches, else HT32ROM_xxx
+  const sectionBlocks = romFiles.map(({ objName, safeName, rom }) => {
+    const origin = /^0x/i.test(rom.origin)
+      ? parseInt(rom.origin, 16) : parseInt(rom.origin, 10);
+    const regionName = existingRegions.get(origin) ?? `HT32ROM_${safeName}`;
+    return `\n  .ht32rom_${safeName} :\n  {\n    *${objName}(.text* .rodata*)\n  } > ${regionName}`;
+  }).join('\n');
+
+  if (/^[ \t]*\.text[ \t]*:/m.test(ld)) {
+    ld = ld.replace(/^([ \t]*\.text[ \t]*:)/m, `${sectionBlocks}\n\n$1`);
+  } else {
+    logWarn(`patchLinkerScriptRom: .text section not found in ${path.basename(ldPath)}; SECTIONS entries skipped`);
+  }
+
+  fs.writeFileSync(ldPath, ld, 'utf8');
+  logInfo(`patchLinkerScriptRom: applied ${romFiles.length} ROM region(s) in ${path.basename(ldPath)}`);
 }
 
 export function lookupSramFromSettings(deviceName: string, extPath: string): string | undefined {

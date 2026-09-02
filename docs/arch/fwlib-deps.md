@@ -7,7 +7,7 @@
 | 檔案 | uVision | HT32-IDE |
 |---|---|---|
 | **startup .s** | FWLib `project_template/IP/Example/GNU_ARM/startup_xxx_gcc_NN.s`（`handleKeilAsm` Rule 1），同步 Keil Stack/Heap 大小並 patch `"aw",%nobits`；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/`** | `.project` source 已是 GCC .s，copy 到 `GNU_ARM/` 並 patch `"aw",%nobits`（`patchStartupFiles`）|
-| **ht32_op.c** | FWLib `project_template/IP/Example/GNU_ARM/ht32_op.c`（`handleKeilAsm` Rule 2）；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/ht32_op.c`** | — （專案本身已含）|
+| **ht32_op.c / ht32_op2.c** | FWLib `project_template/IP/Example/GNU_ARM/ht32_op*.c`（`handleKeilAsm` Rule 2，正則 `/^ht32_op.*\.s$/i`，同名 `.c` 取代）；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/ht32_op*.c`** | — （專案本身已含）|
 | **linker script** | `.uvprojx` scatter 檔經 `scatter2ld.ts` 轉換；找不到時從 FWLib `project_template/IP/Example/GNU_ARM/linker.ld` 取得；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/linker.ld`** | `.cproject` 指定的 scriptfile；找不到時從 FWLib `project_template/IP/Example/GNU_ARM/linker.ld` 取得；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/linker.ld`** |
 | **syscalls.c** | `library/<series>_Driver/src/syscalls.c` 找不到時 copy bundled `templates/GNU_ARM/syscalls.c`；**純組語專案跳過** | — （專案本身已含）|
 | **ht32_stack_analysis.c** | copy bundled `templates/GNU_ARM/ht32_stack_analysis.c` → `GNU_ARM/`；**純組語專案跳過** | copy bundled `templates/GNU_ARM/ht32_stack_analysis.c` → `GNU_ARM/`；**純組語專案跳過** |
@@ -32,7 +32,7 @@
 | 檔案 | 標準系列（1/4/5xxxx） | 49x 系列（490/491/493） |
 |---|---|---|
 | **startup .s** | FWLib `project_template/IP/Example/GNU_ARM/{startup}.s`，patch `"aw",%nobits` + 最小 Heap；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/`** | FWLib `libraries/cmsis/cm4/device_support/startup/gcc/startup_ht32f49xxx.s`，patch `"aw",%nobits` + 最小 Heap |
-| **ht32_op.c** | FWLib `project_template/IP/Example/GNU_ARM/ht32_op.c`；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/ht32_op.c`** | — |
+| **ht32_op.c / ht32_op2.c** | FWLib `project_template/IP/Example/GNU_ARM/ht32_op*.c`；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/ht32_op*.c`** | — |
 | **linker script** | FWLib `project_template/IP/Example/GNU_ARM/linker.ld`，patch FLASH/RAM 大小；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/linker.ld`** | FWLib `libraries/cmsis/cm4/device_support/startup/gcc/linker/<chip>_FLASH.ld`，patch KEEP(.heap/.stack) |
 | **driver .c** | FWLib `library/<series>_Driver/src/*.c`（清單來自 `.mk`，全部加入）| FWLib `libraries/drivers/src/*.c`（掃目錄全部複製）|
 | **system .c** | FWLib `project_template/IP/Example/<system_xxx>.c`；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/`** | FWLib `libraries/cmsis/cm4/device_support/system_<family>.c` |

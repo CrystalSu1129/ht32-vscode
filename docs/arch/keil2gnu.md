@@ -65,7 +65,7 @@
 
 ## 特殊處理
 
-- **`handleKeilAsm` 呼叫時機**：convert uV 時，所有 `.s` 檔（無論是否有 FWLib `templateRoot`）都經過 `handleKeilAsm` → `keil2gnu`；Rule 1（startup template lookup）與 Rule 2（ht32_op.s）在 `templateRoot = undefined` 時略過，Rule 3（keil2gnu 轉換）永遠執行。純組合語言專案（無 C 源碼、有 scatter）不產生 `syscalls.c` / `ht32_stack_analysis.c`（兩者皆 `#include "ht32.h"`）。
+- **`handleKeilAsm` 呼叫時機**：convert uV 時，所有 `.s` 檔（無論是否有 FWLib `templateRoot`）都經過 `handleKeilAsm` → `keil2gnu`；Rule 1（startup template lookup）與 Rule 2（`ht32_op*.s` → 同名 `.c`）在 `templateRoot = undefined` 時略過，Rule 3（keil2gnu 轉換）永遠執行。純組合語言專案（無 C 源碼、有 scatter）不產生 `syscalls.c` / `ht32_stack_analysis.c`（兩者皆 `#include "ht32.h"`）。
 - **`INCLUDE file`**：被 include 的檔也是 Keil 語法，需遞迴轉換後存為 `_gcc.s`，`.include` 路徑指向轉換後的檔案
 - **`Stack_Size EQU` / `Heap_Size EQU`**：只發 `.equ`，不發 `#define`，確保使用者修改 `.s` 內的 `.equ` 值後能正確生效（`#define` 會被 preprocessor 先展開覆蓋掉）
 - **`__main`**：Keil 的 C runtime entry，GNU 對應為 `main`（有 semihosting 時需注意）
