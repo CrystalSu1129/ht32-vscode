@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2020",
+    "outDir": "out",
+    "rootDir": "src",
+    "sourceMap": true,
+    "strict": true,
+    "lib": [
+      "ES2020"
+    ],
+    "types": [
+      "vscode",
+      "node"
+    ],
+    "moduleResolution": "node",
+    "skipLibCheck": true,
+    "resolveJsonModule": false,
+    "noEmitOnError": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".vscode-test",
+    "src/backup/**",
+    "src/beta/**",
+    "backup/**",
+    "out"
+  ]
+}

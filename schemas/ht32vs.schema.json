@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HT32 Project File",
+  "description": "Defines which project directories are included in the Holtek HT32 VS Code Extension TreeView.",
+  "type": "object",
+  "required": ["projects"],
+  "additionalProperties": false,
+  "properties": {
+    "projects": {
+      "type": "array",
+      "description": "Project directory names (relative to HT32_VSCode/) to show in the TreeView.",
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\]+$"
+      },
+      "minItems": 1
+    }
+  }
+}

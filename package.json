@@ -1,0 +1,663 @@
+{
+  "name": "ht32-vscode",
+  "displayName": "Holtek HT32 VS Code Extension",
+  "description": "Create, convert, and manage Holtek HT32 projects in VS Code. Supports Keil uVision (.uvprojx) and HT32-IDE (.project/.cproject) conversion, with build, flash, and debug support.",
+  "version": "0.1.8",
+  "publisher": "holtek",
+  "icon": "media/ht32.png",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "./out/ht32-project-assistant-for-vs-code.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "extensionPack": [
+    "marus25.cortex-debug",
+    "holtek.ht32-config-vscode",
+    "llvm-vs-code-extensions.vscode-clangd"
+  ],
+  "categories": [
+    "Other",
+    "Programming Languages",
+    "Debuggers"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ht32-holtek/ht32-vscode"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "workspaceContains:.vscode/build-gen/project.meta.json",
+    "workspaceContains:.vscode/build-gen/compile_commands.json",
+    "onView:ht32ProjectView",
+    "onCommand:ht32.convertUvision",
+    "onCommand:ht32.convertHt32Ide",
+    "onCommand:ht32.generateTasksLaunch",
+    "onCommand:ht32.regenerateCompileCommands",
+    "onCommand:ht32.createProject",
+    "onCommand:ht32.openProject",
+    "onCustomEditor:ht32.ht32vsEditor"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "ht32.openReadme",
+        "category": "HT32",
+        "title": "View README",
+        "icon": "$(book)"
+      },
+      {
+        "command": "ht32.createProject",
+        "category": "HT32",
+        "title": "Create Project",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "ht32.openProject",
+        "category": "HT32",
+        "title": "Open Project",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "ht32.openProjectFolder",
+        "category": "HT32",
+        "title": "Open Project (Folder)",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "ht32.renameProjectFile",
+        "category": "HT32",
+        "title": "Rename Project File",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ht32.addNewProject",
+        "category": "HT32",
+        "title": "Add New Project",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "ht32.addProject",
+        "category": "HT32",
+        "title": "Add Existing Project",
+        "icon": "$(new-collection)"
+      },
+      {
+        "command": "ht32.deleteProject",
+        "category": "HT32",
+        "title": "Remove Project",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "ht32.clearRecentProjects",
+        "category": "HT32",
+        "title": "Clear Recent Projects",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "ht32.convertUvision",
+        "category": "HT32",
+        "title": "Convert uVision Project",
+        "icon": "$(symbol-misc)"
+      },
+      {
+        "command": "ht32.convertHt32Ide",
+        "category": "HT32",
+        "title": "Convert HT32-IDE Project",
+        "icon": "$(symbol-misc)"
+      },
+      {
+        "command": "ht32.generateTasksLaunch",
+        "category": "HT32",
+        "title": "Generate Build & Debug Config",
+        "icon": "$(json)"
+      },
+      {
+        "command": "ht32.regenerateCompileCommands",
+        "category": "HT32",
+        "title": "Regenerate compile_commands.json"
+      },
+      {
+        "command": "ht32.build",
+        "category": "HT32",
+        "title": "Build",
+        "icon": "$(build)"
+      },
+      {
+        "command": "ht32.download",
+        "category": "HT32",
+        "title": "Download",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "ht32.runClean",
+        "category": "HT32",
+        "title": "Clean",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "ht32.startDebug",
+        "category": "HT32",
+        "title": "Debug",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "ht32.openSettings",
+        "category": "HT32",
+        "title": "Open Settings",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "ht32.treeMoveProjectUp",
+        "category": "HT32",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "ht32.treeMoveProjectDown",
+        "category": "HT32",
+        "title": "Move Down",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "ht32.treeAddGroup",
+        "category": "HT32",
+        "title": "Add Group",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ht32.treeRemoveGroup",
+        "category": "HT32",
+        "title": "Remove Group",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ht32.treeAddNewFilesToGroup",
+        "category": "HT32",
+        "title": "Add New Files",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "ht32.treeAddExistingFilesToGroup",
+        "category": "HT32",
+        "title": "Add Existing Files",
+        "icon": "$(file-add)"
+      },
+      {
+        "command": "ht32.treeRemoveFile",
+        "category": "HT32",
+        "title": "Remove from Group",
+        "icon": "$(close)"
+      },
+      {
+        "command": "ht32.treeDeleteFile",
+        "category": "HT32",
+        "title": "Delete File",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ht32.closeProject",
+        "category": "HT32",
+        "title": "Close Project",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "ht32.refreshStackAnalysis",
+        "category": "HT32",
+        "title": "Refresh Stack Usage",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ht32.refreshProjectTree",
+        "category": "HT32",
+        "title": "Refresh Project Tree"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ht32Assistant",
+          "title": "HT32",
+          "icon": "media/ht32.svg"
+        }
+      ]
+    },
+    "views": {
+      "ht32Assistant": [
+        {
+          "id": "ht32ProjectView",
+          "name": "PROJECT FILES"
+        },
+        {
+          "id": "ht32RecentView",
+          "name": "RECENT PROJECTS",
+          "when": "ht32.hasRecent && !ht32.hasProject"
+        }
+      ],
+      "debug": [
+        {
+          "id": "ht32StackView",
+          "name": "HT32 STACK USAGE",
+          "when": "ht32.hasProject && inDebugMode"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "ht32.ht32vsEditor",
+        "displayName": "HT32 Project",
+        "selector": [{ "filenamePattern": "*.ht32vs" }],
+        "priority": "default"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "ht32.addNewProject",
+          "when": "view == ht32ProjectView && viewItem == vscodeRoot",
+          "group": "inline@1"
+        },
+        {
+          "command": "ht32.addProject",
+          "when": "view == ht32ProjectView && viewItem == vscodeRoot",
+          "group": "inline@2"
+        },
+        {
+          "command": "ht32.renameProjectFile",
+          "when": "view == ht32ProjectView && viewItem == vscodeRoot",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "ht32.treeMoveProjectUp",
+          "when": "view == ht32ProjectView && viewItem == project && ht32.canMoveProjectUp",
+          "group": "1_order@1"
+        },
+        {
+          "command": "ht32.treeMoveProjectDown",
+          "when": "view == ht32ProjectView && viewItem == project && ht32.canMoveProjectDown",
+          "group": "1_order@2"
+        },
+        {
+          "command": "ht32.deleteProject",
+          "when": "view == ht32ProjectView && viewItem == project",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "ht32.treeAddGroup",
+          "when": "view == ht32ProjectView && viewItem == project",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "ht32.treeAddNewFilesToGroup",
+          "when": "view == ht32ProjectView && viewItem == group",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "ht32.treeAddExistingFilesToGroup",
+          "when": "view == ht32ProjectView && viewItem == group",
+          "group": "1_edit@2"
+        },
+        {
+          "command": "ht32.treeRemoveGroup",
+          "when": "view == ht32ProjectView && viewItem == group",
+          "group": "1_edit@3"
+        },
+        {
+          "command": "ht32.treeRemoveFile",
+          "when": "view == ht32ProjectView && viewItem == file",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "ht32.treeDeleteFile",
+          "when": "view == ht32ProjectView && viewItem == file",
+          "group": "1_edit@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "ht32.createProject",
+          "when": "view == ht32ProjectView && !ht32.hasProject",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ht32.openProject",
+          "when": "view == ht32ProjectView && !ht32.hasProject",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ht32.convertUvision",
+          "when": "view == ht32ProjectView && !ht32.hasProject",
+          "group": "1_convert@1"
+        },
+        {
+          "command": "ht32.convertHt32Ide",
+          "when": "view == ht32ProjectView && !ht32.hasProject",
+          "group": "1_convert@2"
+        },
+        {
+          "command": "ht32.build",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ht32.startDebug",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ht32.runClean",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ht32.download",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "navigation@4"
+        },
+        {
+          "command": "ht32.openSettings",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "navigation@5"
+        },
+        {
+          "command": "ht32.generateTasksLaunch",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "navigation@6"
+        },
+        {
+          "command": "ht32.createProject",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "1_project@1"
+        },
+        {
+          "command": "ht32.openProject",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "1_project@2"
+        },
+        {
+          "command": "ht32.closeProject",
+          "when": "view == ht32ProjectView && ht32.hasProject",
+          "group": "1_project@3"
+        },
+        {
+          "command": "ht32.refreshStackAnalysis",
+          "when": "view == ht32StackView",
+          "group": "navigation"
+        },
+        {
+          "command": "ht32.clearRecentProjects",
+          "when": "view == ht32RecentView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "*.ht32vs",
+        "url": "./schemas/ht32vs.schema.json"
+      }
+    ],
+    "configuration": {
+      "title": "Holtek HT32 VS Code Extension",
+      "properties": {
+        "ht32.internal.extensionRoot": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "*(Managed automatically — do not edit manually.)* Absolute path to the installed extension directory. Updated on each activation to reflect the current version, so that generated tasks.json / launch.json remain valid after extension updates."
+        },
+        "ht32.activeProjectFile": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Active .ht32vs project file (relative to HT32_VSCode/). Controls which projects are shown in the TreeView."
+        },
+        "ht32.gccPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Path to arm-none-eabi-gcc. Leave empty to auto-detect."
+        },
+        "ht32.makePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Path to make. Leave empty to auto-detect."
+        },
+        "ht32.optimizationLevel": {
+          "type": "string",
+          "default": "Os",
+          "enum": [
+            "O0",
+            "O1",
+            "O2",
+            "O3",
+            "Os",
+            "Og"
+          ],
+          "enumDescriptions": [
+            "No optimization (fastest rebuild)",
+            "Basic optimization",
+            "Balanced optimization (recommended)",
+            "Maximum optimization",
+            "Optimize for size",
+            "Optimize for debugging experience"
+          ],
+          "description": "Compiler optimization level (-O flag)."
+        },
+        "ht32.floatAbi": {
+          "type": "string",
+          "default": "soft",
+          "enum": [
+            "soft",
+            "softfp",
+            "hard"
+          ],
+          "enumDescriptions": [
+            "Software FP (required for M0/M0+/M3)",
+            "Software ABI with hardware FP instructions",
+            "Hardware FP ABI (M4F/M7 only)"
+          ],
+          "description": "Floating-point ABI (-mfloat-abi). Must match all linked libraries."
+        },
+        "ht32.fpu": {
+          "type": "string",
+          "default": "none",
+          "enum": [
+            "none",
+            "fpv4-sp-d16",
+            "fpv5-sp-d16",
+            "fpv5-d16"
+          ],
+          "enumDescriptions": [
+            "No FPU (M0/M0+/M3)",
+            "Cortex-M4F single-precision",
+            "Cortex-M7 single-precision",
+            "Cortex-M7 double-precision"
+          ],
+          "description": "FPU type (-mfpu). Only applies when Float ABI is softfp or hard."
+        },
+        "ht32.specs": {
+          "type": "string",
+          "default": "nano",
+          "enum": [
+            "nano",
+            "standard",
+            "nosys"
+          ],
+          "enumDescriptions": [
+            "newlib-nano + nosys (smallest, recommended for MCU)",
+            "Full newlib",
+            "nosys only (no nano)"
+          ],
+          "description": "C runtime library (--specs)."
+        },
+        "ht32.debugInterface": {
+          "type": "string",
+          "default": "e-Link32 Pro",
+          "enum": [
+            "e-Link32 Pro",
+            "e-Link32 Lite",
+            "ST-Link",
+            "J-Link"
+          ],
+          "description": "Debug probe interface used by OpenOCD."
+        },
+        "ht32.openocdPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "OpenOCD path override. Leave empty to use bundled OpenOCD."
+        },
+        "ht32.dfpPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to HT32 device pack root. Used to auto-locate SVD files for peripheral register view."
+        },
+        "ht32.svdFile": {
+          "type": "string",
+          "default": "",
+          "description": "SVD file path for peripheral register view. Leave empty to auto-detect."
+        },
+        "ht32.extraCFlags": {
+          "type": "string",
+          "default": "",
+          "description": "Extra flags appended to CFLAGS (e.g. -flto -DDEBUG)."
+        },
+        "ht32.extraLDFlags": {
+          "type": "string",
+          "default": "",
+          "description": "Extra flags appended to LDFLAGS (e.g. -u _printf_float)."
+        },
+        "ht32.eraseMode": {
+          "type": "string",
+          "default": "erase_sector",
+          "enum": [
+            "erase_sector",
+            "erase_chip",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Erase Sectors — only erases sectors being programmed",
+            "Erase Full Chip (default) — erases entire flash before programming",
+            "Do Not Erase — skip erase step"
+          ],
+          "description": "Flash erase behavior when downloading firmware to the device."
+        },
+        "ht32.openocdDebugLevel": {
+          "type": "number",
+          "default": 0,
+          "enum": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "enumDescriptions": [
+            "Off (default)",
+            "Error + Warn",
+            "Info (recommended for troubleshooting)",
+            "Debug (very verbose)"
+          ],
+          "description": "OpenOCD verbosity level. Increase when flash download fails."
+        },
+        "ht32.spimLoader": {
+          "type": "string",
+          "default": "",
+          "description": "External SPI flash loader override. Leave empty for auto-detection."
+        },
+        "ht32.extraPdscPaths": {
+          "type": "array",
+          "default": [],
+          "scope": "machine",
+          "description": "Additional PDSC file paths (e.g. pre-release device packs). Searched before the bundled HT32_DFP.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ht32.flashLoaders": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "description": "Additional external flash loaders (e.g. SPI flash). When non-empty, overrides auto-detection.",
+          "items": {
+            "type": "object",
+            "required": [
+              "hlm",
+              "start",
+              "end"
+            ],
+            "properties": {
+              "hlm": {
+                "type": "string",
+                "description": "Flash loader filename"
+              },
+              "start": {
+                "type": "string",
+                "description": "Flash start address (hex, e.g. 0x08400000)"
+              },
+              "end": {
+                "type": "string",
+                "description": "Flash end address (hex, e.g. 0x093FFFFF)"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enable or disable this loader"
+              }
+            }
+          }
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "ht32.treeDeleteFile",
+        "key": "delete",
+        "when": "focusedView == ht32ProjectView"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "ht32ProjectView",
+        "contents": "# Welcome to Holtek HT32 VS Code Extension\n\n[Create Project](command:ht32.createProject)\n[Open Project](command:ht32.openProject)\n\n[View README](command:ht32.openReadme)\n",
+        "when": "!ht32.hasProject"
+      },
+      {
+        "view": "ht32ProjectView",
+        "contents": "Convert Project\n\n[Convert a uVision Project](command:ht32.convertUvision)\n[Convert a HT32-IDE Project](command:ht32.convertHt32Ide)\n",
+        "when": "!ht32.hasProject"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run bundle",
+    "compile": "tsc -p ./",
+    "bundle": "esbuild src/ht32-project-assistant-for-vs-code.ts --bundle --outfile=out/ht32-project-assistant-for-vs-code.js --external:vscode --platform=node --target=node18 --minify",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "test:mcu": "node test_scripts/test-mcu.js",
+    "test:create": "node test_scripts/test-create-project.js",
+    "test:compile": "node test_scripts/test-compile.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

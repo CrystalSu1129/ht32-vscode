@@ -14,10 +14,10 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 |---------|-------------|
 | **Create Project** | Wizard-driven project generator from HT32 FWLib |
 | **Convert uVision** | Import Keil `.uvprojx` / `.uvmpw` projects — Makefile, linker script, clangd config auto-generated |
-| **Convert HT32-IDE** | Import one or more Eclipse CDT `.project`/`.cproject` project folders (multi-select supported) |
+| **Convert HT32-IDE** | Import one or more Eclipse CDT `.project`/`.cproject` project folders |
 | **Build / Clean** | One-click or toolbar buttons; compound post-build task support |
 | **Debug** | Cortex-Debug + pyOCD (default) or bundled OpenOCD; Flash & Debug or Attach mode |
-| **Download** | Download firmware via bundled OpenOCD + e-Link32 Pro/Lite |
+| **Download** | Download firmware via pyOCD or bundled OpenOCD; supports CMSIS-DAP (e-Link32), J-Link, ST-Link |
 | **Project Settings** | WebView panel for compiler flags, debug interface, post-build commands |
 | **Project File Tree** | Source groups view with add/remove files and groups |
 | **Configuration Wizard** | Visual editor for HT32 config files (`conf.h`, `usbdconf.h`, `startup.s`) — Keil-compatible wizard syntax |
@@ -111,7 +111,7 @@ The **`···` (More Actions)** menu also contains:
 
 **Project File Tree** shows source groups — the same group concept as Keil uVision.
 
-<img src="media/5.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
+<img src="media/5-1.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
 Hovering over the root node reveals:
 
@@ -126,7 +126,7 @@ Hovering over the root node reveals:
 
 | Target | Actions |
 |--------|---------|
-| Tree root (`.ht32vs`) | Add Existing Project, Rename Project File |
+| Tree root (`.ht32vs`) | Rename Project File |
 | Sub-project node | Move Up, Move Down, Remove Project, Add Group |
 | Group | Add New Files, Add Existing Files, Remove Group |
 | File | Remove from Group, Delete File |
@@ -154,20 +154,21 @@ A `.ht32vs` file can list multiple sub-project folders (e.g. `Project_IAP` and `
 
 | Action | How |
 |--------|-----|
-| **Add New Project** | Hover the root node → **Add New Project** — run the Create Project wizard to add a new sub-project |
+| **Add New Project** | Hover the root node → **Add New Project** — run the Create Project wizard to add a new sub-project. The **Project Folder** in the wizard is fixed to the currently open project folder and cannot be changed. |
 | **Add Existing Project** | Hover the root node → **Add Existing Project** — select a project already converted or created in the same folder |
 | **Remove&nbsp;Project** | Right-click a project node → **Remove Project** — removes it from the list (files on disk are not deleted). Not available when only one project remains. |
 | **Move Up / Move Down** | Right-click a project node → **Move Up** or **Move Down** — adjusts the sub-project's compilation order in **Build All**. |
 
-When the current project has only **one** sub-project and you add a second, a prompt appears asking for a **project file name** (defaults to the project root folder name). Confirming creates:
+When the current project has only **one** sub-project and you add a second, a prompt appears asking for a **multi-project file name** (defaults to the project root folder name). Confirming creates:
 
-| File | Contents | Role |
-|------|----------|------|
-| `ProjectA.ht32vs` | `{ "projects": ["ProjectA"] }` | original single-project (unchanged) |
-| `ProjectB.ht32vs` | `{ "projects": ["ProjectB"] }` | new single-project |
-| `MyProject.ht32vs` | `{ "projects": ["ProjectA", "ProjectB"] }` | multi-project (set as active) |
+<img src="media/5-2.jpg" width="800" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
+<img src="media/5-3.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
-All three `.ht32vs` files coexist. Double-click any of them to switch views.
+| File | Contents | Description |
+|------|----------|-------------|
+| `ProjectA.ht32vs` | `{ "projects": ["ProjectA"] }` | Single-project file containing only ProjectA |
+| `ProjectB.ht32vs` | `{ "projects": ["ProjectB"] }` | Single-project file containing only ProjectB |
+| `MyProject.ht32vs` | `{ "projects": ["ProjectA", "ProjectB"] }` | Multi-project file containing both sub-projects |
 
 #### File structure
 
@@ -184,14 +185,6 @@ MyProject/
         ├── Makefile
         └── ...
 ```
-
-#### Building and debugging
-
-Clicking **Build**, **Debug**, **Clean**, or **Download** in the toolbar shows a QuickPick to select which sub-project to act on. **Build** and **Clean** also include **Build All** / **Clean All** that runs all sub-projects in sequence. The compilation order follows the Project Tree order — use **Move Up / Move Down** (right-click a project node) to adjust it.
-
-### Renaming a project
-
-Right-click the root node in the Project Tree → **Rename Project File**. This renames the `.ht32vs` file on disk and updates the Recent Projects list automatically.
 
 ---
 
@@ -213,11 +206,7 @@ Right-click the root node in the Project Tree → **Rename Project File**. This 
 
 <img src="media/6.jpg" width="450" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
----
-
-<br>
-
-### Generated File Structure
+**Directory Structure**
 
 ```
 MyProject/                 ← user-named project folder
@@ -225,7 +214,8 @@ MyProject/                 ← user-named project folder
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   └── launch.json
+    │   ├── launch.json
+    │   └── settings.json
     ├── <projectName>.ht32vs
     └── <projectName>/     ← named from the project name entered in the wizard
         ├── Makefile
@@ -261,10 +251,8 @@ MyProject/                 ← user-named project folder
 For `.uvmpw`, **all sub-projects are converted at once**, each into its own folder named after the `.uvprojx` filename.
 
 **Auto-generated:**
-- `Makefile` (MCU, compiler flags, source files)
-- Linker script (shared in `GNU_ARM/`): if Keil scatter file present, converted to `<scatter_name>.ld` (original filename with `.ld` extension); otherwise taken directly from FWLib (`linker.ld` for standard series, `<chip>_FLASH.ld` for 49x series)
-- `startup_xxx_gcc.s` (converted from Keil startup, shared in `GNU_ARM/`)
-- `compile_commands.json` / `tasks.json` / `launch.json`
+- `Makefile`, linker script (`.ld`), `startup_xxx_gcc.s` (shared files under `GNU_ARM/`)
+- `compile_commands.json`, `tasks.json`, `launch.json`, `settings.json`
 
 **`.uvprojx` single-project** — output to `HT32_VSCode/GNU_ARM/` (shared files) + `HT32_VSCode/Project/` (Makefile & metadata)
 
@@ -278,7 +266,8 @@ For `.uvmpw`, **all sub-projects are converted at once**, each into its own fold
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   └── launch.json
+    │   ├── launch.json
+    │   └── settings.json
     ├── GNU_ARM/           ← shared: startup .s, linker script, ht32_op.c, syscalls.c, ht32_stack_analysis.c
     ├── Project_IAP/       ← named from uvprojx filename
     │   ├── Makefile
@@ -328,7 +317,7 @@ For multi-project, clicking **Build**, **Debug**, **Clean**, or **Download** in 
 
 <br>
 
-A **Post-Build** command can be configured in Settings to run automatically after a successful build (e.g. CRC calculation). The working directory is `${workspaceFolder}` (= `HT32_VSCode/`, the VS Code workspace root). Sub-project folders such as `Project_xxx/build/` are referenced relative to this root.
+A **Post-Build** command can be configured in Settings to run automatically after a successful build (e.g. CRC calculation). The working directory is `HT32_VSCode/` (`${workspaceFolder}`).
 
 <img src="media/9.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -345,46 +334,35 @@ A **Post-Build** command can be configured in Settings to run automatically afte
 
 <br>
 
-## Download Firmware
+## Download and Debug
 
-> Requires Holtek e-Link32 Pro or e-Link32 Lite connected.
+> **Cortex-Debug** is a dependency and is installed automatically.
 
-1. Confirm the e-Link32 is connected and the driver is working
+Both Download and Debug run through the same **Debug Server**, selectable in **Settings → Debugger → Debug Server**:
+
+| Debug Server | Description |
+|-------------|-------------|
+| **PyOCD** (default) | No driver installation needed; installed automatically on first use |
+| **OpenOCD** | Bundled; available as an alternative |
+
+> When using J-Link with OpenOCD on Windows, the WinUSB driver is required. pyOCD does not require driver changes.
+
+For all related settings, see [Project Settings → Debugger tab](#debugger-tab).
+
+### Download Firmware
+
+> Requires a supported debug probe connected (CMSIS-DAP / J-Link / ST-Link).
+
+1. Confirm the debug probe is connected and the driver is working
 2. Click **Download** in the HT32 toolbar
 3. Firmware is flashed automatically; progress is shown in the Terminal
 
 <img src="media/10.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-### Download Settings
-
-Open **Settings** (toolbar) → **Debugger** tab:
-
-| Setting | Options |
-|---------|---------|
-| Debug Interface | CMSIS-DAP (e-Link32) / J-Link / ST-Link |
-| Erase Mode | Erase Sector (default) / Erase Chip / None |
-
----
-
-<br>
-
-## Debug
-
-> **Cortex-Debug** is a dependency and is installed automatically.
-
-The extension supports two debug backends, selectable in **Settings → Debugger → Debug Server**:
-
-| Server | Description |
-|--------|-------------|
-| **PyOCD** (default) | No driver installation needed; installed automatically on first use |
-| **OpenOCD** | Bundled; available as an alternative |
-
-> **J-Link on Windows with OpenOCD:** Requires WinUSB driver via [Zadig](https://zadig.akeo.ie/). J-Link works with pyOCD without driver changes.
-
-### Full Debug Flow
+### Debug
 
 1. Click **Debug** in the HT32 toolbar
-2. The extension compiles, flashes, and starts a GDB debug session via the selected server
+2. The extension compiles, flashes, and starts debugging
 
 ### Attach Mode (connect to an already-running target)
 
@@ -431,7 +409,7 @@ The **HT32 Stack Usage Analysis** panel (in the Run & Debug view) updates automa
 
 By default, **Peak Usage** shows a reminder to enable watermark tracking. To display actual peak values:
 
-1. Ensure `HTCFG_STACK_USAGE_ANALYSIS` is defined as `1` (e.g. in your project configuration header)
+1. Set `HTCFG_STACK_USAGE_ANALYSIS` to `1` in `ht32f5xxxx_conf.h` (or `ht32f1xxxx_conf.h`); for 49x series, add this define manually to the project conf.h
 2. Call `StackUsageAnalysisInit(0)` once at startup (before the RTOS scheduler or main loop)
 
 ```c
@@ -497,9 +475,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 <img src="media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-> **J-Link + OpenOCD on Windows:** Requires WinUSB driver installed via [Zadig](https://zadig.akeo.ie/) . After switching to WinUSB, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; restore by reinstalling SEGGER J-Link Software. 
-
-> **J-Link + pyOCD does not require driver changes.**
+> When using J-Link with OpenOCD on Windows, the WinUSB driver is required. After switching, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; reinstall SEGGER J-Link Software to restore. pyOCD does not require driver changes.
 
 ---
 

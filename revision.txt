@@ -1,0 +1,325 @@
+================================================================================
+Holtek HT32 VS Code Extension — Revision History
+================================================================================
+
+v0.1.8 摘要
+--------------------------------------------------------------------------------
+
+新功能
+- FWLib project_template/ 缺失 fallback：三條路徑（Convert uVision / HT32-IDE / Create Project）
+  均自動 fallback 到 bundled templates/{familyTag}/GNU_ARM/，有 library/ 結構即可轉換
+- Create Project 系列判斷改與 Convert 一致：改掃 library/HT32*xxxx_Driver/ 目錄，
+  不再依賴 project_template/ 是否存在；MCU 選單亦同步加入 bundled .mk fallback
+- C / ASM Defines 分離：新增 adefines.list，C 與組語 defines 獨立管理；
+  Settings WebView 也新增對應的兩組編輯列表
+- TreeView Group 新增 Add New Files / Add Existing Files 右鍵選單
+- Add Existing Project 命名與提示改善（原為 Add Project）
+- Multi-Project 升級流程：加入第二個子專案時自動詢問是否升級為 Multi-Project workspace
+- Multi-Project 命名改用 WebviewPanel Dialog（居中 card 樣式，取代畫面頂端 InputBox）
+- Add Existing Project 補上 Multi-Project 升級流程（與 Create Project / Convert 行為一致）
+- clangd 自動安裝：偵測後端未安裝時自動觸發安裝
+- 檔案產生 log：轉換時所有寫出的檔案顯示於 Output Channel
+
+修正
+- Toolchain Detection 大幅改寫：移除深度遞迴掃描（原本阻塞 activation）、加入 session cache
+- 工具缺失通知改為詢問式，不再靜默自動安裝
+- OpenOCD TCL 路徑：extensionRoot 改用 forward slash，修正 HLM 路徑損毀
+- clangd .clangd 位置：移至 workspace root 內，修正 include 路徑失效問題
+- Multi-project IntelliSense：點選 TreeView 節點自動切換 CompilationDatabase
+- HT32L 系列：移除所有 hardcode HT32F 字串，支援 HT32L 等新系列
+- Create Project MCU 名稱：改用 USE_MEM_ define 精確解析，可支援任意前綴晶片（HT50L、HT32L、HT32F 等）
+- compile_commands.json include 路徑改為絕對路徑，修正 clangd 解析失敗
+- Open Project 加速：多項效能優化（SVD Map、PDSC cache、只處理 .ht32vs 列出的 project）
+- Add New File saveLabel '&' 符號被 Windows dialog 吃掉，改用 '+'
+- findSvdFile：deviceName 帶封裝後綴（如 HT32F52341_48LQFP）時查不到 SVD，加入 strip 後綴 fallback
+- Convert HT32-IDE FPU 誤判修正：.cproject 未設 fpu.name（值為 default 或欄位不存在）且目標為
+  Cortex-M4 時，原本直接 fallback 為 fpv4-sp-d16 + hard-float，未���詢 __FPU_PRESENT；
+  修正後先呼叫 detectFpuPresentFromHeader，__FPU_PRESENT=0 時正確輸出 -mfloat-abi=soft（無 -mfpu）
+  已知受影響案例：HT32F490x1 系列（M4 無 FPU）
+
+================================================================================
+
+v0.1.8  (from v0.1.7)
+--------------------------------------------------------------------------------
+
+[FWLib Bundled Templates Fallback]
+- 三條轉換路徑（Convert uVision / Convert HT32-IDE / Create Project）在找到 FWLib root
+  但 project_template/ 不存在時，自動 fallback 到 extension 內建 bundled templates
+  位置：templates/{familyTag}/GNU_ARM/（startup .s、ht32_op.c、linker.ld）
+  修正：FWLib 若只有 library/ 子結構而無 project_template/（如單獨取出的 driver 包），
+  原本直接報錯「Cannot locate FWLib template directory」，現可正常完成轉換
+- familyTag 正規式從 [FL] 改為 [A-Za-z]+，支援未來可能出現的新系列前綴字母
+- resolveGnuArmDir()：找到 FWLib root 後若 project_template/ 不存在，
+  呼叫 bundledGnuDirFromFwlRoot() 取得對應 bundled 路徑
+
+[Create Project — FWLib 系列判斷改與 Convert 一致]
+- detectFwlibSeries() Step 2（內部結構判斷）改掃 library/HT32[A-Za-z]+\d+xxxx_Driver/
+  原本檢查 project_template/IP/Example/GNU_ARM/ 是否存在；改為與 Convert uVision 相同的
+  掃描 library/ 子目錄名稱格式，不依賴 project_template/ 是否存在
+- listStdMcus()：MCU 選單 .mk 來源加入 bundled fallback
+  優先讀 project_template/IP/Example/GNU_ARM/*.mk；
+  project_template/ 不存在時改讀 templates/{familyTag}/GNU_ARM/*.mk
+
+[C / ASM Defines 分離]
+- 新增 adefines.list：組語專屬 define（-D）獨立寫出，不再與 C defines 合併
+  原本所有 define 都放進 defines.list，C compiler 與 assembler 共用同一份；
+  現在 C defines → defines.list，ASM-only defines → adefines.list
+- Makefile 改用 ADEFS := $(file <adefines.list)，始終存在於所有新舊專案
+  ASFLAGS 固定包含 $(ADEFS)；空檔案 = 空字串 = 不影響編譯（GNU make 4.0+）
+- 轉換路徑（Convert uVision / HT32-IDE / Create Project）全部分離：
+  uVision：Cads.Define → C defines；Aads.Define（不重複者）→ ASM defines
+  HT32-IDE：asmDefines（原本 merge 進 defines）→ 獨立寫 adefines.list
+  Create Project 標準系列：USE_HT32_CHIP=X 移至 adefines.list（原為 defines.list）
+  Create Project 49x 系列：無 USE_HT32_CHIP，寫空 adefines.list
+- compile_commands.json：writeCCDbFromLists 同時讀 defines.list + adefines.list
+  clangd IntelliSense 仍可看到全部 define（含 USE_HT32_CHIP）
+- regenerateMakefileFlags 新增 cDefs / aDefs 參數：
+  Settings 存檔時同步更新 defines.list 與 adefines.list
+  舊專案（無 ADEFS 行）自動升版：插入 ADEFS 行並建立空 adefines.list
+- project.settings.json 新增 cDefs / aDefs 欄位，三條轉換路徑皆寫入
+
+[Settings WebView — Defines UI]
+- Compiler tab 新增「C Defines」與「ASM Defines」兩組可編輯列表
+  對應 defines.list / adefines.list，存檔後立即同步三個檔案：
+  project.settings.json → defines.list → adefines.list → compile_commands.json
+- Define 列表改為 flex-wrap 排版，一列顯示三個（寬度各 1/3），視窗窄時自動換行
+
+[Toolchain Detection]
+- locateArmGcc 移除深度遞迴掃描（原本掃 Program Files 深度 6，導致 activation 阻塞）
+- 改用 where/which 取得完整絕對路徑，不再回傳裸名稱
+- 搜尋順序：user 設定 → where/which → HT32-IDE xPack 固定路徑 → winget 固定路徑
+- 加入 in-session cache，同一視窗只搜尋一次
+- 找到後自動寫入 workspace settings.json，下次啟動直接使用
+- 修正：專案目錄名稱不是 Project/ 時，開啟專案不觸發工具鏈自動偵測與安裝
+- 新增 resolveToolchain() helper：統一 make / gcc / pyocd 三項工具的解析，單一入口
+  修正：initProjectsFromMeta 未優先讀取 user settings 中的 gccPath
+
+[Error Handling]
+- 所有工具（gcc / make / pyocd）缺失改為詢問通知，使用者主動點選才安裝，不再自動執行
+- gcc / make 缺失合併為單一 warning，列出所有缺失工具 + Install via winget 按鈕
+- pyocd 缺失改為詢問（Install / Not Now），不再靜默自動安裝
+- 啟動時若 tasks.json 已存在仍會檢查工具鏈，避免使用者曾按 X 略過後永遠不再提示
+- makefile.makePath 無完整路徑時刪除該 key，避免 Makefile Tools 靜默失敗
+- winget 安裝完成後自動重生 Makefile / tasks.json，當次 session 即可使用
+- 安裝提示訊息移除對 HT32-IDE 的提及
+
+[IntelliSense (compile_commands.json)]
+- Settings 儲存或 Tree 加/移除檔案後，自動重新產出 compile_commands.json
+  修正：原本只有 Convert / Create Project 時才更新，Settings 改 include path 後
+  clangd 仍使用舊的 IntelliSense，需手動執行「Regenerate compile_commands.json」
+- regenAllMakefileFlags 改為 async；每個 bgDir 的 Makefile 更新後立即呼叫
+  writeCCDbFromLists，並重新合併 .vscode/compile_commands.json
+
+  compile_commands.json 更新時機對照表：
+  ┌─────────────────────────────────────┬───────────┬───────────┬───────────┐
+  │ 觸發事件                            │ sources   │ includes  │ defines   │
+  │                                     │ .list     │ .list     │ .list     │
+  ├─────────────────────────────────────┼───────────┼───────────┼───────────┤
+  │ Convert（uV / HT32-IDE）            │ ✓ changed │ ✓ changed │ ✓ changed │
+  │ Create Project                      │ ✓ changed │ ✓ changed │ ✓ changed │
+  │ initProjectsFromMeta（FWLib 模板）  │ ✓ changed │ ✓ changed │ ✓ changed │
+  │ Settings 儲存（include path 等）    │           │ ✓ changed │           │
+  │ Tree 加/移除檔案                    │ ✓ changed │           │           │
+  └─────────────────────────────────────┴───────────┴───────────┴───────────┘
+  以上所有路徑完成後均會自動更新 compile_commands.json（修正前 Settings /
+  Tree 操作兩條路徑缺少更新）
+
+[Add Existing Project — 改善辨識度]
+- 命令名稱由「Add Project」改為「Add Existing Project」，避免誤以為可加入任意專案
+- 找不到可加入的專案時改用 QuickPick 提示（原為右下角訊息），並說明需先執行 Convert 或 Create Project
+
+[Create Project — Include paths 改從 .mk 解析]
+- 標準系列 include paths 全部從 .mk 的 INCLUDE_PATH 行動態解析，不再 hardcode
+  修正：hardcode 路徑無法反映 FWLib 結構異動；USB include path 現在也一併納入
+
+[Convert HT32-IDE — 純組語專案修正]
+- ht32_stack_analysis.c 加入純組語判斷（與 Convert uVision 一致）
+  修正：純組語 HT32-IDE 專案因無 FWLib include path 導致 ht32_stack_analysis.c 編譯失敗
+- hasCsrcs 計算移除多餘的 !s.headerOnly 條件（headerOnly 僅適用於 .s，對 .c/.cpp 無意義）
+
+[clangd 自動安裝]
+- 加入 extensionDependencies，安裝 extension 時自動帶入 vscode-clangd 前端
+- activate() 啟動後偵測 clangd binary 是否存在，不存在時主動呼叫 clangd.install
+  修正：使用者安裝後只有前端 (0.6)，不知道還需手動安裝後端 (22.1)
+
+[Open Project 加速]
+- generateTasksAndLaunch：bgDirs 改由 active .ht32vs 的 projects 決定，不再掃整個目錄
+  修正：開啟單一 MCU 專案仍處理目錄下全部 70 個 project
+- autoAttachProjectFromWorkspace：initProjectsFromMeta 同樣改為只處理 .ht32vs 列出的 project
+  修正：每次 VS Code 啟動都對全部 project 重寫 Makefile / sources.list / compile_commands.json
+- findSvdFile：改為第一次呼叫時一次掃完所有 SVD 目錄建成完整 Map，後續查詢 O(1)
+  修正：原本每個 project 各自掃一遍 DFP 目錄
+- PDSC 檔案讀取加入 raw string cache（_pdscRawCache）
+  修正：parseMcuCfg / readPdscIram1 / selectInternalFlm 對同一 PDSC 檔案重複讀取磁碟
+
+[pyOCD Probe 選擇]
+- Settings WebView 的 Scan 按鈕在 serverType=pyocd 時改用 `pyocd list --json` 取得 probe UID
+  修正：原本使用 WMI USB 掃描（供 OpenOCD adapter serial 用），pyocd 模式下掃描結果不保證
+  與 pyocd 的 probe UID 格式一致；兩個 probe 都連接時 pyocd 會詢問要使用哪一個
+- 切換 Debug Server（pyocd ↔ openocd）時自動重新掃描 adapter 清單
+- 切換 Debug Server 時清空 Adapter Serial 欄位，避免帶入錯誤的 serial 格式
+- Adapter Serial 空白時，掃描結果自動填入第一筆（不限單一 probe，多 probe 也有預設值）
+- 點選 Scan 結果中的 probe 後立即觸發 auto-save，不需手動按 Save
+
+[OpenOCD TCL 路徑修正]
+- `ht32.internal.extensionRoot` 改以 forward slash 儲存（原為 Windows 反斜線路徑）
+  修正：${config:ht32.internal.extensionRoot} 展開後進入 OpenOCD TCL 引擎，反斜線被當
+  escape 字元吃掉（\U→U、\c→c 等），導致 hlm_loader 路徑損毀、OpenOCD 找不到 HLM 檔案
+
+[detectFwlibSeries 雙重確認]
+- 改用兩種方法獨立判斷，互補容錯：
+  方法一（目錄名稱）：HT32_STD_*_FWLib* → std；HT32*49*_FWLib* → 49x
+  方法二（內部結構）：存在 project_template/IP/Example/GNU_ARM → std；
+                      libraries/drivers/src/ 下有 ht32*49* 檔案 → 49x
+- 兩者一致直接回傳；一方失敗（目錄改名或結構異動）仍由另一方補救
+  原本：目錄名稱優先、內部結構僅備援（OR 邏輯但順序固定）
+  現在：兩者同時執行，結果一致最佳，任一有結果即可接受（互補邏輯）
+- FwlibSeries type 簡化為 'std' | '49x'，移除 std-5xxxx / 49x-490 等細分子系列
+
+[HT32L / 多系列 Create Project 修正]
+- fwlibFamilyPrefix：/xxxx$/ → /\d*xxxx$/
+  修正：HT32F5xxxx_Driver 移除 _Driver 後剩 HT32F5xxxx，舊 regex 只移除 xxxx 留下 HT32F5，
+  導致 displayName 多一個數字（HT32F0006 → HT32F50006）
+- listStdMcus filter：/^[\da-fA-F]+\.mk$/ → /^[\da-zA-Z]+\.mk$/
+  修正：HT32F3200S、HT32F3200T、HT32L3200U 等非 hex 後綴被濾掉，無法出現在選單
+- detectFwlibSeries：移除逐字列舉 startup_ht32f5/f4/f1，改為 /^startup_ht32/ 通用檢測
+  尾端加 fallback catch-all（如 L5xxxx），讓任何標準系列 FWLib 都能偵測成功
+- parseMkFile familyTag regex：/startup_ht32(f\d\w+)_gcc/ → /startup_ht32([a-z]\d\w+)_gcc/i
+  修正：L5xxxx 的 startup_ht32l5xxxx_gcc_01 無法匹配，familyTag 錯誤 fallback 到 f5xxxx，
+  導致 confHFile 用錯（ht32f5xxxx_conf.h → 應為 ht32l5xxxx_conf.h）
+- resolveUsbdConfHeader：移除 ht32f${chipName}_libcfg.h hardcode，改為掃 driverIncDir
+  修正：L5xxxx 的 libcfg 檔名為 ht32l52353_libcfg.h，不含 ht32f 前綴
+
+[clangd .clangd 位置修正]
+- .clangd 改寫到 workspace root 內（HT32_VSCode/）而非其上層目錄
+  修正：clangd 在 VS Code 中搜尋 .clangd 不一定會跨越 workspace root 邊界，
+  放在上層時 clangd 找不到設定，導致 compile_commands.json 未套用，include
+  路徑全部失效（ht32.h file not found）
+- CompilationDatabase 路徑改為只寫 project 名稱（e.g. HT32_52341），不再帶
+  HT32_VSCode/ 前綴；相對於 .clangd 檔案位置與相對於 workspace root 兩種解析
+  方式結果相同，不再有歧義
+- setClangdIntelliSenseProject / _initClangdFromFile 同步調整路徑與格式
+
+[Multi-project IntelliSense]
+- 每個 Project_*/ 各自有完整 compile_commands.json（包含 gcc 完整路徑、--target=arm-none-eabi、-isystem）
+  不再合併成 .vscode/compile_commands.json
+- clangd.arguments 移除 --compile-commands-dir，只保留 --query-driver
+- .clangd 的 CompilationDatabase 指向目前選中的 Project_*/
+  修正：多專案時 IntelliSense 跳轉定義永遠使用第一個 project 的 defines（e.g. HT_LED1 總是跳到 52341）
+- TreeView 點選任意節點（Project / Group / File）時自動切換 CompilationDatabase 並重啟 clangd
+  若路徑相同則略過，避免不必要的閃爍
+- 多專案時，TreeView 的 Project 節點 description 顯示 ● clangd 標示目前 clangd 指向的專案
+  開啟專案時自動從 .clangd 讀取初始狀態
+
+[檔案產生 log]
+- 轉換 / 產生設定時，所有寫出的檔案均在 Output Channel 顯示路徑
+  包含：Makefile、.list 檔、linker.ld、compile_commands.json、
+        project.meta.json、.clangd、tasks.json、launch.json、settings.json
+
+[HT32L / 多系列支援]
+- 移除所有 hardcode "HT32F" 字串，改為動態判斷，支援 HT32L 等未來新系列
+- is49xDevice：/^HT32F49/ → /^HT32[A-Za-z]+49/（不再假設系列字母一定是 F）
+- library 路徑偵測 regex（uv2make × 2、ht32ide2make × 1）：
+  /HT32F\w+_Driver/ → /HT32\w+_Driver/
+- DFP pack 偵測 regex：/HT32F\w+?_DFP/ → /HT32\w+?_DFP/
+- USE_HT32F... package variant regex：HT32F\d → HT32[A-Za-z]\d
+- chipSuffix 去前綴（createProject × 2）：/^HT32F/ → /^HT32[A-Za-z]/
+- stdLibSubdirs()：移除 HT32F5xxxx/4xxxx/1xxxx hardcode mapping，
+  改為掃 FWLib/library/ 目錄取得實際 Driver 目錄名稱（e.g. HT32L5xxxx_Driver）
+- 新增 fwlibFamilyPrefix() helper：從 FWLib 目錄結構推導晶片前綴（HT32F / HT32L / ...）
+- displayName 組合：HT32F${suffix} → ${fwlibFamilyPrefix(fwlibPath)}${suffix}
+
+[Create Project — resolveStdDisplayName（USE_MEM_ 精確晶片名稱）]
+- 新增 resolveStdDisplayName(defines, chipSuffix, defaultPrefix) helper：
+  讀取 .mk 的 C_OPTION += -DUSE_MEM_<name>，直接以 <name> 作為 displayName
+  無 USE_MEM_ 時 fallback 為 prefix + suffix.toUpperCase()（原有行為）
+- listStdMcus：每個 .mk 讀取所有 C define，呼叫 resolveStdDisplayName 決定選單顯示名稱
+  修正：原本直接拼 fwlibFamilyPrefix + chipSuffix，對 HT50L 系列顯示為 HT32L3200U（錯誤前綴）
+- generateProjectFiles std branch：PDSC / Settings.ini 查詢鍵同樣改用 resolveStdDisplayName
+  修正：查詢鍵錯誤導致 RAM/Flash 查不到，顯示為 RAM=? Flash=?
+- 適用範圍：不假設晶片名稱以 HT32 開頭，USE_MEM_ 內容原封不動使用，
+  可支援任意前綴的晶片（HT50L、HT32L、HT32F，或未來新系列）
+
+[test-create-project.js 修正]
+- series 判斷：series.startsWith('std-') → series === 'std'（3 處）
+  修正：detectFwlibSeries 回傳 'std' 而非 'std-...'，原判斷恆為 false，std 系列全部靜默略過
+- readEqu / patchEqu：加入 hex 支援（0x[\da-fA-F]+|\d+），.equ 值可為 hex
+  修正：0x40 之類的 heap/stack 值無法讀取，導致驗證誤判
+- --workers 預設值：DO_COMPILE ? 2 : 4 → 固定 4，不受 compile 模式影響
+
+[Workspace Trust]
+- 移除 extensionDependencies 中的 vscode-clangd（clangd 保留於 extensionPack）
+  修正：clangd 宣告 untrustedWorkspaces.supported=false，導致 extension 在 Restricted Mode
+  下完全不 activate，trust 管理面板永遠不會彈出
+
+[Settings WebView]
+- regenAllMakefileFlags 加入 limitToBgs 參數；Settings 存檔時只 regen 當前 .ht32vs
+  所包含的 projects，不再掃整個 HT32_VSCode/ 目錄
+  修正：FWLib 模板目錄（數百個 example）存檔時逐一重寫全部 Makefile
+- AutoSave debounce 由 3000ms 縮短為 1500ms
+
+[Multi-Project 升級流程]
+- 加入第二個專案時自動偵測是否需升級為 Multi-Project：
+  觸發時機：目前 .ht32vs 的 projects[] 只有 1 個 entry，且使用者執行
+  「Add New Project」或「Add Existing Project」
+- 偵測到後彈出 InputBox 詢問 multi-project workspace 名稱（預設為專案根目錄名稱）
+  使用者取消 → 中止操作；確認後產生三個 .ht32vs（均保留，可自由切換）：
+  原有 ProjectA.ht32vs → { "projects": ["ProjectA"] }（不動）
+  新建 ProjectB.ht32vs → { "projects": ["ProjectB"] }（單一 project）
+  新建 Workspace.ht32vs → { "projects": ["ProjectA", "ProjectB"] }（multi，設為 active）
+- 原本 multi-project 僅在 Convert .uvmpw 時自動建立，
+  單一 .uvprojx / Create Project 加入第二個時直接 merge 進現有 .ht32vs；
+  現在改為明確詢問並建立獨立 workspace 檔案，流程更清楚
+
+[Add New Files / Add Existing Files]
+- TreeView Group 節點新增右鍵選單：Add New File、Add Existing File(s)
+  Add New File：於 Group 所屬目錄建立新檔案，並自動加入 sources.list 與 compile_commands.json
+  Add Existing File(s)：以 OpenDialog 選取已有檔案，多選支援，加入同一 Group
+
+[findSvdFile — 支援帶封裝後綴的 deviceName]
+- 查不到完整名稱時，自動 strip 封裝後綴（如 HT32F52341_48LQFP → HT32F52341）再重查
+  修正：標準系列 uvprojx <Device> 可能含封裝後綴（如 _48LQFP），
+  SVD cache 以無封裝名稱建立，直接查詢 miss → launch.json 缺 SVD 路徑 →
+  Cortex-Debug 無暫存器視圖
+
+[README]
+- "Add Existing Project" 說明移除「converted」字眼，改為「projects in the same folder」
+
+[compile_commands.json — Include 路徑改為絕對路徑]
+- writeCCDbFromLists：讀取 includes.list 後，用 path.resolve(bgDir, ...) 將相對路徑展開為絕對路徑
+  修正：compile_commands.json 內 -I 路徑為相對路徑（如 ../../../../library/...），
+  clangd 在 Windows 上無法正確從 directory 欄位解析多層 ../ 路徑，
+  導致 ht32.h file not found、IntelliSense 全部失效
+
+[Add New File — saveLabel 修正]
+- saveLabel 由 'Create & Add to Group' 改為 'Create + Add to Group'
+  修正：Windows 原生 Save dialog 將 & 視為 accelerator key prefix，導致 & 被吃掉，
+  按鈕顯示為 "Create Add to group"
+
+[Multi-Project 命名 Dialog 改為 WebviewPanel]
+- 新增 showInputDialog() helper：以 WebviewPanel 取代 showInputBox，在 editor 中央顯示
+  card 樣式的輸入對話框，套用 VS Code theme 顏色變數；支援 Enter 送出、Escape 取消
+- Create Project / Convert uVision 的 multi-project 命名步驟改用 showInputDialog
+  修正：showInputBox 出現在畫面最上方一條細 bar，使用者容易忽略
+
+[Add Existing Project — 補上 Multi-Project 升級流程]
+- 加入 existing.length === 1 判斷，第一次加入第二個 project 時彈出 showInputDialog
+  詢問 workspace 名稱，建立新的多 project .ht32vs（原單一 project .ht32vs 保持不動）
+  修正：原本直接 append 進現有 .ht32vs，跳過 multi-project 命名流程，
+  與 Create Project / Convert uVision 的行為不一致
+
+v0.1.7  (from v0.1.6)
+--------------------------------------------------------------------------------
+
+[Build Task]
+- Build / Clean / Compile task 加入 make -C 旗標，不依賴 shell cwd
+  修正：部分 Windows/PowerShell 環境導致
+  「No targets specified and no makefile found」-->vscode切換cwd失敗
+- Clean task 指令由 `make clean -C <dir>` 改為 `make -C <dir> clean`
+  修正：GNU make 要求 -C 必須在 target 之前，否則部分環境無法執行 clean
+- tasks.json 中 bundled make 路徑改用 ${config:ht32.internal.extensionRoot} 取代寫死的版本號路徑
+  修正：升版後舊專案的 tasks.json 仍指向舊版目錄導致 build 失敗
+
+
+
+================================================================================

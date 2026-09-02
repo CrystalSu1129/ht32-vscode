@@ -2,7 +2,7 @@
 
 # Holtek HT32 VS Code Extension
 
-Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功能。支援匯入 Keil uVision 與 HT32-IDE 專案，或從零建立新專案，並透過 **pyOCD**（預設）或內建 OpenOCD 實現一鍵編譯、燒錄與除錯。
+Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功能。支援匯入 Keil uVision 與 HT32-IDE 專案，或從頭建立新專案，並透過 **pyOCD**（預設）或內建 OpenOCD 實現一鍵編譯、燒錄與除錯。
 
 ---
 
@@ -14,10 +14,10 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 |------|------|
 | **建立新專案** | 精靈式專案產生器，支援 HT32 FWLib（標準系列與 49x 系列） |
 | **匯入 uVision** | 匯入 Keil `.uvprojx` / `.uvmpw` 專案，自動產生 Makefile、連結腳本、clangd 設定 |
-| **匯入 HT32-IDE** | 匯入一個或多個 Eclipse CDT `.project`/`.cproject` 專案資料夾（支援多選） |
+| **匯入 HT32-IDE** | 匯入一個或多個 Eclipse CDT `.project`/`.cproject` 專案資料夾 |
 | **編譯 / 清除** | 一鍵或工具列按鈕；支援複合式 Post-Build 任務 |
 | **除錯** | Cortex-Debug + pyOCD（預設）或內建 OpenOCD；支援 Flash & Debug 或 Attach 模式 |
-| **燒錄** | 透過內建 OpenOCD + e-Link32 Pro/Lite 燒錄韌體 |
+| **燒錄** | 透過 pyOCD 或內建 OpenOCD 燒錄韌體；支援 CMSIS-DAP（e-Link32）、J-Link、ST-Link |
 | **專案設定** | 提供編譯器旗標、除錯介面、Post-Build 指令的 WebView 設定面板 |
 | **專案檔案樹** | 原始碼群組檢視，支援新增/移除檔案與群組 |
 | **設定精靈** | HT32 設定檔視覺化編輯器（`conf.h`、`usbdconf.h`、`startup.s`），相容 Keil 精靈語法 |
@@ -66,7 +66,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 **方法二：從 Marketplace 安裝**
 
 1. 擴充功能搜尋欄輸入 `Holtek HT32 VS Code Extension`（或直接搜尋 `holtek` / `ht32` 即可找到）
-2. 點 **Install**
+2. 點擊 **Install**
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/3.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -76,9 +76,9 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 ## 介面介紹
 
-安裝後，左側 Activity Bar 出現 **HT32 圖示**，點擊展開 HT32 面板。
+安裝後，左側**活動列**出現 **HT32 圖示**，點擊展開 HT32 面板。
 
-**專案未開啟時**顯示 **Create / Open / Convert** 按鈕；若有歷史記錄，下方會列出 **Recent Projects**，點擊即可直接開啟。
+**專案未開啟時**顯示 **Create / Open / Convert** 按鈕；若有歷史記錄，若曾開啟過專案，下方會列出 **Recent Projects**，點擊即可直接開啟。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/4.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -122,11 +122,11 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 <br>
 
-## **右鍵選單：**
+## 右鍵選單
 
 | 對象 | 操作 |
 |------|------|
-| 樹狀根節點（`.ht32vs`） | Add Existing Project（加入現有子專案）、Rename Project File（重新命名）|
+| 樹狀根節點（`.ht32vs`） | Rename Project File（重新命名）|
 | 子專案節點 | Move Up（上移）、Move Down（下移）、Remove Project（從清單移除）、Add Group（新增群組） |
 | 群組 | Add New Files（新建檔案）、Add Existing Files（加入現有檔案）、Remove Group（移除群組） |
 | 檔案 | Remove from Group（從群組移除）、Delete File（從磁碟刪除） |
@@ -154,23 +154,21 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 | 操作 | 方式 |
 |------|------|
-| **新增子專案（新建）** | 將滑鼠移至根節點 → **Add New Project** — 執行建立專案精靈，新增子專案 |
+| **新增子專案（新建）** | 將滑鼠移至根節點 → **Add New Project** — 執行建立專案精靈，新增子專案。精靈中的**專案資料夾**固定為目前已開啟的專案資料夾，無法變更。 |
 | **新增子專案（現有）** | 將滑鼠移至根節點 → **Add Existing Project** — 從同一資料夾中選取已轉換或建立的專案 |
 | **移除子專案** | 在專案節點按右鍵 → **Remove Project**，從清單中移除（磁碟上的檔案不會刪除）。僅剩一個子專案時無法執行。 |
 | **上移 / 下移** | 在專案節點按右鍵 → **Move Up** 或 **Move Down**，調整子專案在 **Build All** 時的編譯順序。 |
 
-當目前只有**一個**子專案，新增第二個時會彈出提示，要求輸入**新的專案檔名稱**（預設為專案根目錄名稱）。確認後產生：
+當目前只有**一個**子專案，新增第二個時將提示輸入**多專案檔名**（預設為專案根目錄名稱）。確認後產生：
 
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5-2.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5-2.jpg" width="800" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/5-3.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 
-| 檔案 | 內容 | 角色 |
+| 檔案 | 內容 | 說明 |
 |------|------|------|
-| `ProjectA.ht32vs` | `{ "projects": ["ProjectA"] }` | 原有單一專案（不動） |
-| `ProjectB.ht32vs` | `{ "projects": ["ProjectB"] }` | 新的單一專案 |
-| `MyProject.ht32vs` | `{ "projects": ["ProjectA", "ProjectB"] }` | 多專案（設為 active） |
-
-三個 `.ht32vs` 檔案共存，雙擊任一個即可切換。
+| `ProjectA.ht32vs` | `{ "projects": ["ProjectA"] }` | 僅包含 ProjectA 的單一專案檔 |
+| `ProjectB.ht32vs` | `{ "projects": ["ProjectB"] }` | 僅包含 ProjectB 的單一專案檔 |
+| `MyProject.ht32vs` | `{ "projects": ["ProjectA", "ProjectB"] }` | 包含兩個子專案的多專案檔 |
 
 #### 目錄結構
 
@@ -179,7 +177,7 @@ MyProject/
 └── HT32_VSCode/
     ├── ProjectA.ht32vs          ← 單一專案視圖
     ├── ProjectB.ht32vs          ← 單一專案視圖
-    ├── MyProject.ht32vs         ← 多專案視圖（active）
+    ├── MyProject.ht32vs         ← 多專案視圖（使用中）
     ├── ProjectA/
     │   ├── Makefile
     │   └── ...
@@ -188,21 +186,13 @@ MyProject/
         └── ...
 ```
 
-#### 編譯與除錯
-
-點擊工具列的 **Build**、**Debug**、**Clean** 或 **Download** 時，會彈出 QuickPick 讓使用者選擇要對哪個子專案執行。**Build** 與 **Clean** 另提供 **Build All** / **Clean All**，依序執行所有子專案。編譯順序由 Project Tree 的排列決定，可透過**右鍵 → Move Up / Move Down** 調整。
-
-### 重新命名專案
-
-在 Project Tree 的根節點按右鍵 → **Rename Project File**，即可同時更名 `.ht32vs` 檔案並自動更新 Recent Projects 清單。
-
 ---
 
 <br>
 
 ## 建立新專案
 
-> 需要先準備好 HT32 FWLib（從 Holtek 官網下載）
+> 使用前請先從 Holtek 官網下載並準備好 HT32 FWLib。
 
 1. HT32 面板 → **Create Project**
 2. 依精靈步驟選擇：
@@ -211,16 +201,14 @@ MyProject/
 |------|------|
 | ① | 選擇 **HT32 FWLib 根目錄** |
 | ② | 選擇 **MCU 型號** |
-| ③ | 選擇輸出類型：**Application** 或 **Library** |
+| ③ | 選擇輸出類型：**Executable (.elf)** 或 **Library (.a)** |
 | ④ | 輸入**專案名稱**和儲存位置 |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/6.jpg" width="450" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
----
-
 <br>
 
-### 產生的檔案結構
+**目錄結構**
 
 ```
 MyProject/                 ← 使用者命名的專案資料夾
@@ -228,7 +216,8 @@ MyProject/                 ← 使用者命名的專案資料夾
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   └── launch.json
+    │   ├── launch.json
+    │   └── settings.json
     ├── <projectName>.ht32vs
     └── <projectName>/     ← 名稱來自精靈中輸入的專案名稱
         ├── Makefile
@@ -248,8 +237,7 @@ MyProject/                 ← 使用者命名的專案資料夾
             └── ht32_stack_analysis.c
 ```
 
-**NOTE:**
-**工作區信任** — 若 VS Code 以受限模式開啟資料夾，將顯示通知：*「You are in Restricted Mode」*，請點選 **Trust** 以啟用編譯與除錯功能。
+> **注意：工作區信任** — 若 VS Code 以受限模式開啟資料夾，將顯示通知：*「You are in Restricted Mode」*，請點選 **Trust** 以啟用編譯與除錯功能。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/22.jpg" width="400" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -262,14 +250,12 @@ MyProject/                 ← 使用者命名的專案資料夾
 1. HT32 面板 → **Convert uVision Project**
 2. 選取 `.uvprojx`（單一專案）或 `.uvmpw`（多專案）
 
-`.uvmpw` 會將所有子專案**一次全部轉換**，每個子專案各產生一個獨立的目錄，目錄名稱即為 `.uvprojx` 的檔名。
+`.uvmpw` 可**一次轉換所有子專案**，每個子專案各產生一個獨立的目錄，目錄名稱即為 `.uvprojx` 的檔名。
 
 **自動產生：**
 
-- `Makefile`（MCU 型號、編譯旗標、來源檔案）
-- Linker script（放在共用 `GNU_ARM/`）：有 Keil scatter 時轉換為 `<scatter檔名>.ld`（保留原始檔名，副檔名改為 `.ld`）；無 scatter 時直接取自 FWLib（標準系列為 `linker.ld`，49x 系列為 `<chip>_FLASH.ld`）
-- `startup_xxx_gcc.s`（從 Keil startup 轉換，放在共用 `GNU_ARM/`）
-- `compile_commands.json` / `tasks.json` / `launch.json`
+- `Makefile`、linker script（`.ld`）、`startup_xxx_gcc.s`（共用檔位於 `GNU_ARM/`）
+- `compile_commands.json`、`tasks.json`、`launch.json`、`settings.json`
 
 **`.uvprojx` 單一專案** — 共用檔輸出至 `HT32_VSCode/GNU_ARM/`；Makefile 與中繼資料輸出至 `HT32_VSCode/Project/`
 
@@ -282,7 +268,8 @@ MyProject/                 ← 使用者命名的專案資料夾
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
-    │   └── launch.json
+    │   ├── launch.json
+    │   └── settings.json
     ├── GNU_ARM/           ← 共用：startup .s、linker script、ht32_op.c、syscalls.c、ht32_stack_analysis.c
     ├── Project_IAP/       ← 取自 uvprojx 檔名
     │   ├── Makefile
@@ -298,7 +285,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 <br>
 
-**轉換警告**（如 Keil 預編譯 `.lib` 無法用於 GCC 工具鏈）會顯示在 VS Code **Problems** 面板中。
+**轉換警告**（如 Keil 預編譯 `.lib` 無法用於 GCC 工具鏈）會顯示在 VS Code **問題（Problems）**面板中。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/18.png" width="600" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -311,9 +298,9 @@ MyProject/                 ← 使用者命名的專案資料夾
 ## 匯入 HT32-IDE 專案
 
 1. HT32 面板 → **Convert HT32-IDE Project**
-2. 選取一個或多個包含 `.project` / `.cproject` 的**專案資料夾**（**支援多選**）
+2. 選取一個或多個包含 `.project` / `.cproject` 的**專案資料夾**
 
-每個選取的資料夾各自轉換為 `HT32_VSCode/` 內的獨立目錄，共用 `HT32_VSCode/GNU_ARM/` 存放 startup、linker script 與自動產生的 C 檔案。產生的資料夾結構與 TreeView 組織方式與匯入 uVision 專案相同。
+每個選取的資料夾各自轉換為 `HT32_VSCode/` 內的獨立目錄，共用 `HT32_VSCode/GNU_ARM/` 存放 startup、linker script 與自動產生的 C 檔案。產生的資料夾結構及**專案樹**組織方式，與匯入 uVision 專案相同。
 
 > **工作區信任** — 若 VS Code 以受限模式開啟資料夾，擴充功能將顯示通知：*「This workspace is in Restricted Mode. Please trust the workspace to enable all features.」*，請點選 **Trust Workspace** 以啟用編譯與除錯功能。
 
@@ -323,16 +310,16 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 ## 建置
 
-- HT32 工具列點 **Build**
+- 點擊工具列的 **Build**
 - 或按 `Ctrl+Shift+B`（直接執行預設建置任務 **Build (make)**）
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/8.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-多專案時，工具列的 **Build**、**Debug**、**Clean**、**Download** 按鈕會彈出 QuickPick 讓使用者選擇要操作哪個子專案。**Build** 與 **Clean** 另有 **Build All** / **Clean All** 選項，可依序處理所有子專案。編譯順序與 Project Tree 的排列順序相同，可在專案節點上按右鍵 **Move Up / Move Down** 調整。
+多專案時，工具列的 **Build**、**Debug**、**Clean**、**Download** 按鈕會彈出**快速選取清單**讓使用者選擇要操作哪個子專案。**Build** 與 **Clean** 另有 **Build All** / **Clean All** 選項，可依序處理所有子專案。編譯順序與**專案樹**的排列順序相同，可在專案節點上按右鍵 **Move Up / Move Down** 調整。
 
 <br>
 
-也可在「專案設定」中設定 **Post-Build** 命令，Build 成功後自動執行（例如 CRC 計算）。執行時的工作目錄為 `${workspaceFolder}`（即 `HT32_VSCode/`，VS Code workspace 根目錄），子專案目錄如 `Project_xxx/build/` 均相對此路徑。
+也可在「專案設定」中設定 **Post-Build** 命令，Build 成功後自動執行（例如 CRC 計算）。Post-Build 命令的工作目錄為 `HT32_VSCode/`（`${workspaceFolder}`）。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/9.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -342,63 +329,52 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 ## 清除
 
-- HT32 工具列點 **Clean**
+- 點擊工具列的 **Clean**
 - 刪除 `HT32_VSCode/Project/build/`（或 `HT32_VSCode/Project_xxx/build/`）目錄下所有編譯輸出
 
 ---
 
 <br>
 
-## 燒錄韌體
-
-> 需要連接 Holtek e-Link32 Pro 或 e-Link32 Lite
-
-1. 確認 e-Link32 已連接並驅動正常
-2. HT32 工具列點 **Download**
-3. 韌體自動燒錄，Terminal 顯示進度
-
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/10.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-
-### 燒錄設定
-
-點工具列 **Settings** → **Debugger** 分頁：
-
-| 設定 | 選項 |
-|------|------|
-| Debug Interface | CMSIS-DAP（e-Link32）/ J-Link / ST-Link |
-| Erase Mode | Erase Sector（預設）/ Erase Chip / None |
-
----
-
-<br>
-
-## 除錯
+## 燒錄與除錯
 
 > **Cortex-Debug** 為相依套件，安裝本擴充功能時會自動一併安裝。
 
-擴充功能支援兩種除錯後端，可在**設定 → Debugger → Debug Server** 切換：
+燒錄（Download）與除錯（Debug）皆透過同一**除錯伺服器**執行，可在**設定 → Debugger → Debug Server** 切換：
 
-| 後端 | 說明 |
-|------|------|
+| 除錯伺服器 | 說明 |
+|-----------|------|
 | **PyOCD**（預設） | 免安裝驅動；首次使用時自動安裝 |
 | **OpenOCD** | 已內建；可作為備選方案 |
 
-> **J-Link + OpenOCD on Windows：** 需透過 [Zadig](https://zadig.akeo.ie/) 安裝 WinUSB 驅動。**J-Link + pyOCD 無需更換驅動。**
+> 若使用 J-Link 搭配 OpenOCD，Windows 需將驅動更換為 WinUSB；搭配 pyOCD 則無需更換驅動。
 
-### Debug（完整流程）
+所有相關設定詳見「[專案設定 → Debugger 分頁](#debugger-分頁)」。
 
-1. HT32 工具列點 **Debug**
-2. 自動編譯、燒錄，並啟動 GDB 除錯工作階段（透過選定的後端）
+### 燒錄韌體（Download）
+
+> 需要連接支援的除錯器（CMSIS-DAP / J-Link / ST-Link）
+
+1. 確認除錯器已連接並驅動正常
+2. 點擊工具列的 **Download**
+3. 韌體自動燒錄，終端機顯示進度
+
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/10.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+
+### 除錯（Debug）
+
+1. 點擊工具列的 **Debug**
+2. 自動編譯、燒錄，並開始除錯
 
 ### Attach（附接到執行中的目標）
 
 適用於目標板已經在執行（不需要重新燒錄）的情況，例如觀察特定狀態下的程式行為。
 
 1. 確認目標板已上電並執行
-2. 按 **F5** 或開啟 **Run and Debug**（Ctrl+Shift+D）
+2. 按 **F5** 或開啟**執行和除錯**（Ctrl+Shift+D）
 3. 從下拉選單選擇 **HT32 PyOCD Attach**（或 **HT32 OpenOCD Attach**）
 
-> Attach 不會編譯也不會燒錄，直接附接到執行中的目標，不會 reset。
+> Attach 不會編譯也不會燒錄，直接附接到執行中的目標，不會重置目標。
 
 | 模式 | 說明 |
 |------|------|
@@ -415,7 +391,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 ## Stack Usage Analysis（堆疊使用分析）
 
-**HT32 Stack Usage Analysis** 顯示於 Run & Debug 側邊欄，每次除錯器暫停（中斷點、單步、手動暫停）時自動更新，功能等同於 Keil 的堆疊分析視窗。
+**HT32 Stack Usage Analysis** 顯示於**執行和除錯**（Run & Debug）側邊欄，每次除錯器暫停（中斷點、單步、手動暫停）時自動更新，功能等同於 Keil 的堆疊分析視窗。
 
 ### 面板欄位說明
 
@@ -436,7 +412,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 預設 **Peak Usage** 欄位顯示提示訊息。若需顯示實際峰值：
 
-1. 確保 `HTCFG_STACK_USAGE_ANALYSIS` 定義為 `1`（例如在專案的組態標頭檔中設定）
+1. 在 `ht32f5xxxx_conf.h`（或 `ht32f1xxxx_conf.h`）中將 `HTCFG_STACK_USAGE_ANALYSIS` 設為 `1`；49x 系列請在 conf.h 中手動新增此定義
 2. 在啟動時呼叫一次 `StackUsageAnalysisInit(0)`（RTOS scheduler 或主迴圈之前）
 
 ```c
@@ -456,7 +432,7 @@ int main(void) {
 
 ## 專案設定
 
-HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
+點擊工具列的 **Settings** 開啟設定面板，面板分為三個分頁：
 
 ### Compiler 分頁
 
@@ -502,9 +478,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-> **J-Link + OpenOCD on Windows：** 需先用 [Zadig](https://zadig.akeo.ie/) 安裝 WinUSB 驅動。切換為 WinUSB 後，SEGGER 工具（Keil、J-Flash 等）將無法辨識 J-Link；還原方式為重新安裝 SEGGER J-Link Software。
-
-> **J-Link + pyOCD 無需更換驅動。**
+> 若使用 J-Link 搭配 OpenOCD，Windows 需將驅動更換為 WinUSB。切換後 SEGGER 工具（Keil、J-Flash 等）將無法辨識 J-Link，還原方式為重新安裝 SEGGER J-Link Software。搭配 pyOCD 則無需更換驅動。
 
 ---
 
@@ -516,7 +490,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 |----------|------|
 | Post-Build | Build 後執行的命令（工作目錄：`${workspaceFolder}` = `HT32_VSCode/`） |
 | GCC Path | `arm-none-eabi-gcc` 路徑（空白 = 自動偵測或 winget 安裝） |
-| OpenOCD Path | OpenOCD 路徑（空白 = 使用 bundled OpenOCD） |
+| OpenOCD Path | OpenOCD 路徑（空白 = 使用內建 OpenOCD） |
 
 > 工具鏈路徑（GCC / OpenOCD）儲存於 VS Code 機器設定，**所有專案共用**，僅顯示於第一個專案的 Build 分頁。
 
@@ -545,7 +519,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/20.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 **方法二 — 右鍵選單：**  
-在左側 Explorer 面板中對 `.h`、`.c`、`.s` 檔案按右鍵 → **Open in Holtek Configuration Wizard**
+在左側**檔案總管**面板中對 `.h`、`.c`、`.s` 檔案按右鍵 → **Open in Holtek Configuration Wizard**
 
 **方法三 — 命令面板：**  
 `Ctrl+Shift+P` → **HT32: Open in Holtek Configuration Wizard**
@@ -566,7 +540,7 @@ HT32 工具列點 **Settings** 開啟設定面板，面板分為三個分頁：
 
 ## Code Intelligence（clangd）
 
-匯入或建立專案後，開啟專案時自動為每個專案產生 `.clangd` 與獨立的 `compile_commands.json`，提供完整的 code intelligence 支援。多專案時，在專案樹點選任意節點，`.clangd` 會自動切換至該專案的 `compile_commands.json`。
+匯入或建立專案後，開啟專案時自動為每個專案產生 `.clangd` 與獨立的 `compile_commands.json`，提供完整的程式碼智慧辨識支援。多專案時，在專案樹點選任意節點，`.clangd` 會自動切換至該專案的 `compile_commands.json`。
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/13.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/14.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">

@@ -1,0 +1,39 @@
+# === 保留 out 與 runtime 依賴, 排除雜項 ===
+
+**/*.map
+src/**
+*.ts
+
+# compiled output
+!out/**
+
+# bundled OpenOCD (always include)
+!openocd/**
+
+# VCS directories
+.git/**
+.svn/**
+
+# Claude memory / dev dirs
+.claude/**
+.vscode/**
+
+# dev / build files
+backup/**
+test/**
+test_scripts/**
+**/*.test.*
+
+# dev-only docs & config
+docs/**
+CLAUDE.md
+*.bat
+tsconfig.json
+.gitignore
+svn-ignore.txt
+svn-setup.bat
+release.bat
+
+# esbuild 已將所有依賴 bundle 進 out/，不需要 node_modules
+node_modules/**
+

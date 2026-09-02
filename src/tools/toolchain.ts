@@ -1,0 +1,624 @@
+// src/tools/toolchain.ts
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { semverCmp } from './utils';
+import { exec as cpExec, spawn, ExecOptions } from 'child_process';
+
+/* ──────────────────────────────────────
+ * 共用 OutputChannel / Log
+ * ────────────────────────────────────── */
+export const CHANNEL = vscode.window.createOutputChannel('HT32 Toolchain');
+
+export function logInfo(msg: string) {
+  CHANNEL.appendLine(`[INFO] ${msg}`);
+}
+export function logWarn(msg: string) {
+  CHANNEL.appendLine(`[WARN] ${msg}`);
+}
+export function logError(msg: string) {
+  CHANNEL.appendLine(`[ERROR] ${msg}`);
+}
+
+/* ──────────────────────────────────────
+ * exec helper（包成 Promise）
+ * ────────────────────────────────────── */
+function execp(cmd: string, options: ExecOptions = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    cpExec(cmd, { windowsHide: true, ...options }, (err, stdout, stderr) => {
+      const code = (err && typeof (err as any).code === 'number') ? (err as any).code as number : 0;
+      const outStr = stdout ? stdout.toString() : '';
+      const errStr = stderr ? stderr.toString() : '';
+      resolve({ code, stdout: outStr, stderr: errStr });
+    });
+  });
+}
+
+/** 驗證 exe 執行結果是否包含某些關鍵字（不拋錯） */
+async function verifyExe(exe: string, args: string[], mustIncludes: string[]): Promise<boolean> {
+  const joined = args.join(' ');
+  const cmd = process.platform === 'win32'
+    ? `cmd /c "${exe}" ${joined}`
+    : `${exe} ${joined}`;
+
+  const { code, stdout, stderr } = await execp(cmd);
+  if (code !== 0) return false;
+  const text = (stdout + '\n' + stderr).toLowerCase();
+  return mustIncludes.every(s => text.includes(s.toLowerCase()));
+}
+
+/* ──────────────────────────────────────
+ * make 尋找相關 helper
+ * ────────────────────────────────────── */
+
+async function isGnuMake(fullPath: string): Promise<boolean> {
+  return verifyExe(fullPath, ['--version'], ['gnu make']);
+}
+
+/** 掃一組候選路徑，只接受 MSYS2 / Git / MinGW，排除 GnuWin32 / Cygwin */
+async function scanMakeCandidates(title: string, list: string[]): Promise<string | undefined> {
+  logInfo(`-- scanning ${title} --`);
+  for (const p of list) {
+    if (!p) continue;
+    if (!fs.existsSync(p)) {
+      logInfo(`  [MISS] ${p}`);
+      continue;
+    }
+    const lower = p.toLowerCase();
+    // 排除 GnuWin32 / Cygwin
+    if (lower.includes('\\gnuwin32\\') || lower.includes('\\cygwin\\')) {
+      logInfo(`  [SKIP bad origin] ${p}`);
+      continue;
+    }
+
+    if (await isGnuMake(p)) {
+      logInfo(`  [OK] ${p}`);
+      return p;
+    } else {
+      logInfo(`  [NOT GNU MAKE] ${p}`);
+    }
+  }
+  return undefined;
+}
+
+/** Windows 的 where */
+async function whereAll(cmd: string): Promise<string[]> {
+  const { code, stdout } = await execp(`where ${cmd}`);
+  if (code !== 0) return [];
+  return stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+}
+
+/** 跨平台尋找 make（只吃 MSYS2 / Git / MinGW；排除 GnuWin32 / Cygwin） */
+export async function locateMake(extensionPath?: string): Promise<string | undefined> {
+  const cfg = vscode.workspace.getConfiguration();
+  logInfo('======= locateMake() START =======');
+  logInfo(`platform = ${process.platform}`);
+
+  // 1) user 設定優先
+  const manual = cfg.get<string>('ht32.tools.makePath') || '';
+  if (manual && fs.existsSync(manual) && await isGnuMake(manual)) {
+    logInfo(`use user-configured make: ${manual}`);
+    return manual;
+  }
+
+  // 2) Windows：優先用 bundled make（保證 GNU Make 4.4，支援 $(file <...)）
+  //    不掃系統，避免找到不支援 $(file <...) 語法的舊版本
+  if (process.platform === 'win32') {
+    if (extensionPath) {
+      const bundled = path.join(extensionPath, 'bin', 'win32-x64', 'make.exe');
+      if (fs.existsSync(bundled) && await isGnuMake(bundled)) {
+        logInfo(`use bundled make: ${bundled}`);
+        return bundled;
+      }
+      logWarn(`bundled make not found at: ${bundled}`);
+    }
+    // bundled 找不到時，嘗試已安裝的 LLVM-MinGW（winget，同樣支援 $(file <...)）
+    const wingetRoot = path.join(
+      process.env.LOCALAPPDATA ?? '',
+      'Microsoft', 'WinGet', 'Packages'
+    );
+    if (fs.existsSync(wingetRoot)) {
+      for (const d of fs.readdirSync(wingetRoot, { withFileTypes: true })) {
+        if (!d.isDirectory() || !d.name.startsWith('MartinStorsjo.LLVM-MinGW')) continue;
+        for (const sub of fs.readdirSync(path.join(wingetRoot, d.name), { withFileTypes: true })) {
+          if (!sub.isDirectory()) continue;
+          const candidate = path.join(wingetRoot, d.name, sub.name, 'bin', 'make.exe');
+          if (fs.existsSync(candidate) && await isGnuMake(candidate)) {
+            logInfo(`use LLVM-MinGW (winget) make: ${candidate}`);
+            return candidate;
+          }
+        }
+      }
+    }
+    logWarn('locateMake: no make available on Windows');
+    return undefined;
+  }
+
+  // 3) Linux / macOS：系統 make 為主
+  const unix = await scanMakeCandidates('UNIX default', [
+    '/usr/bin/make',
+    '/bin/make',
+    '/usr/local/bin/make',
+  ]);
+  if (unix) return unix;
+
+  const { code, stdout } = await execp('which make');
+  if (code === 0) {
+    const p = stdout.trim();
+    if (p && await isGnuMake(p)) {
+      logInfo(`use which make: ${p}`);
+      return p;
+    }
+  }
+
+  logInfo('locateMake: no suitable make detected on UNIX');
+  return undefined;
+}
+
+/* ──────────────────────────────────────
+ * arm-none-eabi-gcc 尋找相關
+ * ────────────────────────────────────── */
+
+/** In-session cache：同一個 VS Code 視窗內只搜尋一次 */
+let _gccPathCache: string | null | undefined = undefined;  // undefined = not searched yet, null = searched but not found
+
+/** 尋找 arm-none-eabi-gcc（跨平台），永遠回傳絕對路徑或 undefined */
+export async function locateArmGcc(): Promise<string | undefined> {
+  if (_gccPathCache !== undefined) {
+    logInfo(`locateArmGcc: returning cached result: ${_gccPathCache ?? '(not found)'}`);
+    return _gccPathCache ?? undefined;
+  }
+
+  const cfg = vscode.workspace.getConfiguration();
+  logInfo('======= locateArmGcc() START =======');
+  logInfo(`platform = ${process.platform}`);
+
+  const found = await _locateArmGccInner(cfg);
+  _gccPathCache = found ?? null;
+  return found;
+}
+
+/** 找到後寫進 workspace settings（下次啟動直接走 user 設定，不用再搜尋） */
+export function cacheGccPathToSettings(rootFolder: string, gccPath: string) {
+  updateSettingsJson(rootFolder, undefined, gccPath);
+}
+
+async function _locateArmGccInner(cfg: vscode.WorkspaceConfiguration): Promise<string | undefined> {
+  // 1) user 設定
+  const manual = cfg.get<string>('ht32.tools.gccPath') || '';
+  if (manual && fs.existsSync(manual) && await verifyExe(manual, ['--version'], ['arm-none-eabi-gcc'])) {
+    logInfo(`use user-configured arm gcc: ${manual}`);
+    return manual;
+  }
+
+  // 2) PATH：用 where/which 取得完整路徑（避免回傳裸名稱，讓呼叫端無法判斷是否真正找到）
+  if (process.platform === 'win32') {
+    const { code, stdout } = await execp('where arm-none-eabi-gcc');
+    if (code === 0 && stdout.trim()) {
+      const full = stdout.trim().split(/\r?\n/)[0].trim();
+      if (full && fs.existsSync(full)) {
+        logInfo(`locateArmGcc: found in PATH: ${full}`);
+        return full;
+      }
+    }
+  } else {
+    const { code, stdout } = await execp('which arm-none-eabi-gcc');
+    if (code === 0 && stdout.trim()) {
+      logInfo(`locateArmGcc: found in PATH: ${stdout.trim()}`);
+      return stdout.trim();
+    }
+  }
+
+  // 3) Windows：HT32-IDE xPack 固定路徑（最常見安裝位置）
+  if (process.platform === 'win32') {
+    const xpackRoots = [
+      'C:/Program Files (x86)/Holtek HT32 Series/HT32-IDE/xPack',
+      'C:/Program Files/Holtek HT32 Series/HT32-IDE/xPack',
+    ];
+    for (const xpackRoot of xpackRoots) {
+      if (!fs.existsSync(xpackRoot)) continue;
+      const dirs = fs.readdirSync(xpackRoot)
+        .filter(d => d.startsWith('arm-gnu-toolchain'))
+        .sort((a, b) => semverCmp(b, a));  // newest first
+      for (const d of dirs) {
+        const candidate = path.join(xpackRoot, d, 'bin', 'arm-none-eabi-gcc.exe');
+        if (fs.existsSync(candidate)) {
+          logInfo(`locateArmGcc: found HT32-IDE xPack toolchain at ${candidate}`);
+          return candidate;
+        }
+      }
+    }
+
+    // 4) winget 安裝的 Arm GNU Toolchain（固定路徑，不做遞迴掃描）
+    const wingetArmRoot = 'C:\\Program Files\\Arm GNU Toolchain';
+    if (fs.existsSync(wingetArmRoot)) {
+      const dirs = fs.readdirSync(wingetArmRoot)
+        .filter(d => fs.statSync(path.join(wingetArmRoot, d)).isDirectory())
+        .sort((a, b) => semverCmp(b, a));
+      for (const d of dirs) {
+        const candidate = path.join(wingetArmRoot, d, 'bin', 'arm-none-eabi-gcc.exe');
+        if (fs.existsSync(candidate)) {
+          logInfo(`locateArmGcc: found winget Arm GNU Toolchain at ${candidate}`);
+          return candidate;
+        }
+      }
+    }
+  } else {
+    // 5) UNIX：固定常見路徑
+    const unixCandidates = [
+      '/usr/bin/arm-none-eabi-gcc',
+      '/usr/local/bin/arm-none-eabi-gcc',
+      '/opt/arm-none-eabi/bin/arm-none-eabi-gcc',
+    ];
+    for (const c of unixCandidates) {
+      if (fs.existsSync(c)) {
+        logInfo(`locateArmGcc: found at ${c}`);
+        return c;
+      }
+    }
+  }
+
+  logInfo('locateArmGcc: arm-none-eabi-gcc not found');
+  return undefined;
+}
+
+/* ──────────────────────────────────────
+ * winget 執行（帶 VSCode progress）
+ * ────────────────────────────────────── */
+
+async function hasWinget(): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
+  const { code } = await execp('winget --version');
+  return code === 0;
+}
+
+async function runWingetWithProgress(
+  title: string,
+  args: string[],
+): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
+  if (!await hasWinget()) {
+    logWarn('winget not available on this system.');
+    return false;
+  }
+
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title,
+      cancellable: false,
+    },
+    () =>
+      new Promise<boolean>((resolve) => {
+        logInfo(`[winget] start: winget ${args.join(' ')}`);
+        const child = spawn('winget', args, {
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          const text = chunk.toString('utf8').replace(/\r/g, '').trim();
+          // 只挑幾行乾淨的 log，不把整個 TUI 丟出來
+          if (/Downloading|Installing|Verifying|Acquiring/i.test(text)) {
+            logInfo(`[winget] ${text}`);
+          }
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => {
+          const text = chunk.toString('utf8').replace(/\r/g, '').trim();
+          if (text) {
+            logWarn(`[winget:stderr] ${text}`);
+          }
+        });
+
+        child.on('error', (err) => {
+          logError(`[winget] failed to start: ${err.message}`);
+          resolve(false);
+        });
+
+        child.on('exit', (code) => {
+          logInfo(`[winget] exit code = ${code}`);
+          resolve(code === 0);
+        });
+      })
+  );
+}
+
+/* ──────────────────────────────────────
+ * 使用 winget 安裝工具
+ * ────────────────────────────────────── */
+
+/** 使用 winget 安裝 MSYS2 + pacman make，然後再用 locateMake 找 */
+/** 使用 winget 安裝 LLVM-Mingw（內含 make.exe），然後再用 locateMake 找 */
+async function installMakeWithWinget(): Promise<string | undefined> {
+  if (process.platform !== 'win32') {
+    logWarn('installMakeWithWinget: non-Windows platform, skip.');
+    return undefined;
+  }
+
+  const ok = await runWingetWithProgress(
+    'Installing LLVM-Mingw (includes GNU Make)...',
+    [
+      'install', '--id', 'MartinStorsjo.LLVM-MinGW.UCRT',
+      '--source', 'winget',
+      '--accept-source-agreements',
+      '--accept-package-agreements',
+    ]
+  );
+
+  if (!ok) {
+    logWarn('LLVM-Mingw installation failed or skipped.');
+    return undefined;
+  }
+
+  // 安裝完之後，統一交給 locateMake() 做路徑搜尋
+  const makePath = await locateMake();
+  if (!makePath) {
+    logWarn('After installing LLVM-Mingw, still cannot locate make.exe');
+    return undefined;
+  }
+
+  logInfo(`installMakeWithWinget: using make at ${makePath}`);
+  return makePath;
+}
+
+/*async function installMakeWithWinget(): Promise<string | undefined> {
+  if (process.platform !== 'win32') {
+    logWarn('installMakeWithWinget: non-Windows platform, skip.');
+    return undefined;
+  }
+
+  // 安裝 msys2.msys2（你之前就用這個）
+  const okMsys = await runWingetWithProgress(
+    'Installing MSYS2 (for GNU make)...',
+    [
+      'install', '--id', 'msys2.msys2',
+      '--source', 'winget',
+      '--accept-source-agreements',
+      '--accept-package-agreements',
+    ]
+  );
+  if (!okMsys) {
+    logWarn('MSYS2 installation failed or skipped.');
+    return undefined;
+  }
+
+  // 安裝 make：透過 pacman
+  const bashPath = 'C:\\msys64\\usr\\bin\\bash.exe';
+  if (!fs.existsSync(bashPath)) {
+    logWarn(`Cannot find MSYS2 bash at ${bashPath}`);
+    return undefined;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Installing make via pacman (MSYS2)...',
+      cancellable: false,
+    },
+    () =>
+      new Promise<void>((resolve) => {
+        logInfo('[pacman] pacman -Sy --noconfirm make');
+        const child = spawn(bashPath, ['-lc', 'pacman -Sy --noconfirm make'], {
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        child.stdout.on('data', (buf: Buffer) => {
+          const text = buf.toString('utf8').replace(/\r/g, '').trim();
+          if (text) logInfo(`[pacman] ${text}`);
+        });
+        child.stderr.on('data', (buf: Buffer) => {
+          const text = buf.toString('utf8').replace(/\r/g, '').trim();
+          if (text) logWarn(`[pacman:stderr] ${text}`);
+        });
+        child.on('exit', () => resolve());
+        child.on('error', () => resolve());
+      })
+  );
+
+  // 再 locate 一次
+  const makePath = await locateMake();
+  if (!makePath) {
+    logWarn('After MSYS2 pacman make, still cannot locate GNU make.');
+    return undefined;
+  }
+  return makePath;
+}*/
+
+
+
+/** 使用 winget 安裝 Arm GNU Embedded Toolchain */
+async function installArmGccWithWinget(): Promise<string | undefined> {
+  if (process.platform !== 'win32') {
+    logWarn('installArmGccWithWinget: non-Windows platform, skip.');
+    return undefined;
+  }
+
+  const ok = await runWingetWithProgress(
+    'Installing GNU Arm Embedded Toolchain (arm-none-eabi-gcc)...',
+    [
+      'install', '-e', '--id', 'Arm.GnuArmEmbeddedToolchain',
+      '--source', 'winget',
+      '--accept-source-agreements',
+      '--accept-package-agreements',
+    ]
+  );
+  if (!ok) {
+    logWarn('Arm.GnuArmEmbeddedToolchain installation failed or skipped.');
+    return undefined;
+  }
+
+  // 安裝完再找一次
+  const gccPath = await locateArmGcc();
+  if (!gccPath) {
+    logWarn('After winget Arm.GnuArmEmbeddedToolchain, still cannot locate arm-none-eabi-gcc.');
+    return undefined;
+  }
+  return gccPath;
+}
+
+/* ──────────────────────────────────────
+ * 將路徑寫入 .vscode/settings.json
+ * ────────────────────────────────────── */
+
+function updateSettingsJson(root: string, makePath?: string, gccPath?: string) {
+  const settingsPath = path.join(root, '.vscode', 'settings.json');
+  const dir = path.dirname(settingsPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  let data: any = {};
+  if (fs.existsSync(settingsPath)) {
+    try {
+      data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch (e: any) {
+      logWarn(`updateSettingsJson: failed to parse ${settingsPath}: ${e?.message ?? e}; existing settings will be preserved as-is`);
+      return;
+    }
+  }
+
+  if (makePath) {
+    data['ht32.tools.makePath'] = makePath;
+  }
+  if (gccPath) {
+    data['ht32.tools.gccPath'] = gccPath;
+  }
+
+  // Auto-detect file encoding (Big5, Shift-JIS, …) — set as default, don't override if user changed it
+  if (data['files.autoGuessEncoding'] === undefined) {
+    data['files.autoGuessEncoding'] = true;
+  }
+
+  fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  logInfo(`settings.json updated at: ${settingsPath}`);
+}
+
+/* ──────────────────────────────────────
+ * OpenOCD 尋找
+ * ────────────────────────────────────── */
+
+/**
+ * 搜尋 openocd 可執行檔，回傳完整路徑。
+ * 優先順序：user settings → PATH → HT32-IDE 安裝位置（xpack-openocd-*）
+ */
+export async function locateOpenOcd(): Promise<string | undefined> {
+  const cfg = vscode.workspace.getConfiguration();
+  logInfo('======= locateOpenOcd() START =======');
+
+  // 1) user 設定
+  const manual = cfg.get<string>('ht32.tools.openocdPath') || '';
+  if (manual && fs.existsSync(manual)) {
+    logInfo(`use user-configured openocd: ${manual}`);
+    return manual;
+  }
+
+  // 2) PATH
+  if (process.platform === 'win32') {
+    const { code, stdout } = await execp('where openocd');
+    if (code === 0 && stdout.trim()) {
+      const p = stdout.trim().split(/\r?\n/)[0];
+      logInfo(`locateOpenOcd: found in PATH: ${p}`);
+      return p;
+    }
+  } else {
+    const { code, stdout } = await execp('which openocd');
+    if (code === 0 && stdout.trim()) {
+      logInfo(`locateOpenOcd: found in PATH: ${stdout.trim()}`);
+      return stdout.trim();
+    }
+  }
+
+  // 3) Windows：掃 HT32-IDE xPack 安裝目錄
+  if (process.platform === 'win32') {
+    const xpackRoots = [
+      'C:/Program Files (x86)/Holtek HT32 Series/HT32-IDE/xPack',
+      'C:/Program Files/Holtek HT32 Series/HT32-IDE/xPack',
+    ];
+    for (const xpackRoot of xpackRoots) {
+      if (!fs.existsSync(xpackRoot)) continue;
+      const dirs = fs.readdirSync(xpackRoot)
+        .filter(d => d.startsWith('xpack-openocd-'))
+        .sort((a, b) => semverCmp(b, a));  // newest first
+      for (const d of dirs) {
+        const candidate = path.join(xpackRoot, d, 'bin', 'openocd.exe');
+        if (fs.existsSync(candidate)) {
+          logInfo(`locateOpenOcd: found at ${candidate}`);
+          return candidate;
+        }
+      }
+    }
+  }
+
+  logInfo('locateOpenOcd: openocd not found');
+  return undefined;
+}
+
+/**
+ * 根據 openocd 可執行檔路徑，推算 FlashLoader 目錄（HT32 HLM 檔案位置）。
+ * 目錄結構：xPack/xpack-openocd-x.x.x/bin/openocd.exe
+ *           xPack/FlashLoader/HT32F.HLM
+ */
+export function deriveFlashLoaderDir(openocdExePath: string): string {
+  const xpackDir = path.dirname(path.dirname(openocdExePath));   // xpack-openocd-x.x.x
+  return path.normalize(path.join(xpackDir, '..', 'FlashLoader'));
+}
+
+/* ──────────────────────────────────────
+ * 對外：確保 Toolchain 存在 + 設定 JSON
+ * ────────────────────────────────────── */
+
+/**
+ * rootFolder: 一般是 workspaceFolder.fsPath
+ * 1. 先 locateMake / locateArmGcc
+ * 2. 找不到就用 winget 安裝（Windows）
+ * 3. 把路徑寫入 .vscode/settings.json
+ * 4. 若有任何工具是本次新安裝的，呼叫 onInstalled(makePath, gccPath)
+ *    讓呼叫端重新產生 Makefile / tasks.json
+ */
+export async function ensureToolchain(
+  rootFolder: string,
+  extensionPath?: string,
+  onInstalled?: (makePath: string | undefined, gccPath: string | undefined) => Promise<void>
+) {
+  CHANNEL.show(true);
+  logInfo('=== ensureToolchain() ===');
+
+  let makePath = await locateMake(extensionPath);
+  let gccPath  = await locateArmGcc();
+  let installed = false;
+
+  // Windows：bundled 與已安裝的 LLVM-MinGW 都找不到，才透過 winget 安裝
+  if (!makePath && process.platform === 'win32') {
+    makePath  = await installMakeWithWinget();
+    installed = installed || !!makePath;
+  }
+  if (!makePath && process.platform !== 'win32') {
+    vscode.window.showWarningMessage('GNU make not found. Please install it using your system package manager (e.g. apt, yum, pacman, brew).');
+  }
+
+  // 如果沒有 gcc，試著用 winget 安裝
+  if (!gccPath && process.platform === 'win32') {
+    gccPath   = await installArmGccWithWinget();
+    installed = installed || !!gccPath;
+  }
+  if (!gccPath && process.platform !== 'win32') {
+    vscode.window.showWarningMessage('arm-none-eabi-gcc not found. Please install the GNU Arm Embedded Toolchain.');
+  }
+
+  if (!makePath && !gccPath) {
+    logWarn('ensureToolchain: make & gcc both missing after attempt.');
+    return;
+  }
+
+  updateSettingsJson(rootFolder, makePath, gccPath);
+
+  if (installed && onInstalled) {
+    vscode.window.showInformationMessage('Toolchain installed. Regenerating project files...');
+    await onInstalled(makePath, gccPath);
+  }
+
+  vscode.window.showInformationMessage('HT32 Toolchain check complete. Paths written to .vscode/settings.json.');
+}

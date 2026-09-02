@@ -1,0 +1,34 @@
+Proprietary Software License
+
+Copyright (c) 2025 Holtek Semiconductor Inc. All rights reserved.
+
+This software and associated documentation files (the "Software") are the
+proprietary property of Holtek Semiconductor Inc. ("Holtek").
+
+GRANT OF USE
+Holtek grants you a non-exclusive, non-transferable, royalty-free right to
+use the Software solely in connection with the development of products based
+on Holtek HT32 series microcontrollers.
+
+RESTRICTIONS
+You may not, and you may not permit others to:
+  - Copy, modify, adapt, translate, or create derivative works of the Software;
+  - Reverse engineer, disassemble, decompile, or otherwise attempt to derive
+    the source code of the Software;
+  - Redistribute, sublicense, sell, rent, lease, or otherwise transfer the
+    Software or any portion thereof to any third party;
+  - Remove or alter any proprietary notices, labels, or marks on the Software.
+
+THIRD-PARTY COMPONENTS
+The Software bundles third-party open-source components listed in
+THIRD_PARTY_LICENSES.md. Those components are distributed under their
+respective licenses, which are unaffected by this license.
+
+DISCLAIMER OF WARRANTIES
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+HOLTEK SEMICONDUCTOR INC. BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
