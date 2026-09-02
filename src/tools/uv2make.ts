@@ -2979,19 +2979,15 @@ export function regenerateMakefileFlags(
   );
   fs.writeFileSync(makefilePath, content, 'utf8');
 
-  // CFLAGS または ASFLAGS が変わった場合は stale .o が残らないよう build/ を削除して強制 clean rebuild
-  // (ASFLAGS の変化例：$(ADEFS) の追加により .S のアセンブル結果が変わる)
+  // CFLAGS/ASFLAGS 改變時寫 marker，讓使用者按 Build 時才清除 stale .o
   const flagsChanged = oldCFlags !== `CFLAGS  := ${newCFlags}` ||
                        oldASFlags !== `ASFLAGS := ${newASFlags}`;
   if (flagsChanged) {
-    const buildDir = path.join(outDir, 'build');
-    if (fs.existsSync(buildDir)) {
-      try {
-        fs.rmSync(buildDir, { recursive: true, force: true });
-        logInfo(`Compiler flags changed → deleted ${buildDir} to force clean rebuild`);
-      } catch (e) {
-        logWarn(`Could not delete build dir after flags change: ${e}`);
-      }
+    try {
+      fs.writeFileSync(path.join(outDir, '.needs-rebuild'), '', 'utf8');
+      logInfo(`Compiler flags changed → marked for clean rebuild on next build`);
+    } catch (e) {
+      logWarn(`Could not write .needs-rebuild marker: ${e}`);
     }
   }
 

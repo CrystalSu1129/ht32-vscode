@@ -1004,6 +1004,26 @@ async function smartRunTask(kind: 'build' | 'clean' | 'download') {
   const taskLabel     = (d: string) =>
     kind === 'build' ? buildLabel(d) : kind === 'clean' ? cleanLabel(d) : downloadLabel(d);
 
+  if (kind === 'build') {
+    const parent = bgParent(root);
+    for (const d of bgDirs) {
+      const bgPath = path.join(parent, d);
+      const marker = path.join(bgPath, '.needs-rebuild');
+      if (fs.existsSync(marker)) {
+        const buildDir = path.join(bgPath, 'build');
+        if (fs.existsSync(buildDir)) {
+          try {
+            fs.rmSync(buildDir, { recursive: true, force: true });
+            logInfo(`Compiler flags changed → deleted ${buildDir} to force clean rebuild`);
+          } catch (e) {
+            logWarn(`Could not delete build dir: ${e}`);
+          }
+        }
+        try { fs.unlinkSync(marker); } catch {}
+      }
+    }
+  }
+
   if (bgDirs.length === 1) {
     await runTask(taskLabel(bgDirs[0]));
     return;
