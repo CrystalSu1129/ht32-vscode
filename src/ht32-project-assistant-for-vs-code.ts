@@ -316,7 +316,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand('ht32.regenerateCompileCommands', () => regenerateCompileCommandsCommand()),
     vscode.commands.registerCommand('ht32.build', () => smartRunTask('build')),
     vscode.commands.registerCommand('ht32.runClean', () => smartRunTask('clean')),
-    vscode.commands.registerCommand('ht32.openSettings', () => {
+    vscode.commands.registerCommand('ht32.openSettings', async () => {
       const wsFolder = currentWsRoot();
       const root = wsFolder ? computeWsOpenRoot(wsFolder) : undefined;
       const spimFlmMap  = buildFlmAddrMap(extensionPath);
@@ -353,6 +353,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const settingsOcdRoot = path.join(extensionPath, 'openocd').replace(/\\/g, '/');
       const settingsOcdExe  = (vscode.workspace.getConfiguration('ht32').get<string>('openocdPath', '').trim())
                               || `${settingsOcdRoot}/bin/openocd.exe`;
+      const detectedGcc = await locateArmGcc();
       openSettingsPanel(bgDirsArg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, settingsOcdExe, settingsOcdRoot, extensionPath, async (updateConfig) => {
         if (!root) return;
         if (updateConfig) {
@@ -360,7 +361,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         } else {
           await regenAllMakefileFlags(root, bgDirsArg);  // 只 regen 此 .ht32vs 的 projects
         }
-      });
+      }, detectedGcc ?? undefined);
     }),
     vscode.commands.registerCommand('ht32.download', () => smartRunTask('download')),
     vscode.commands.registerCommand('ht32.refreshStackAnalysis', () => stackProvider.refresh()),
@@ -4175,6 +4176,7 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
         cDefs:           bgProjSettings.cDefs,
         aDefs:           bgProjSettings.aDefs,
         outputName:      bgProjSettings.outputName?.trim() || undefined,
+        cc:              gccPathForCCDb || undefined,
       });
       writeCCDbFromLists(bgDir, {
         armCore:      bgProjSettings.mcu,

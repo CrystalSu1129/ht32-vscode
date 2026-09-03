@@ -75,7 +75,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   fpu:               'none',
   useNano:           true,
   useNosys:          true,
-  extraCFlags:       '',
+  extraCFlags:       '-std=gnu11',
   extraLDFlags:      '',
   debugInterface:    'CMSIS-DAP',
   adapterSerial:     '',
@@ -471,7 +471,8 @@ export function openSettingsPanel(
   openocdExe: string,
   openocdRoot: string,
   extensionPath: string,
-  onSave: (updateConfig: boolean) => Promise<void>
+  onSave: (updateConfig: boolean) => Promise<void>,
+  detectedGccPath?: string
 ): void {
   if (panel) { panel.reveal(); return; }
 
@@ -494,7 +495,7 @@ export function openSettingsPanel(
 
   _openocdAvailable = fs.existsSync(openocdRoot);
   panel.webview.html = buildHtml(
-    machineSettings, bgDirs, projectSettingsByBg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, fwlibSeriesByBg, targetNamesByBg
+    machineSettings, bgDirs, projectSettingsByBg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, fwlibSeriesByBg, targetNamesByBg, detectedGccPath
   );
 
   panel.webview.onDidReceiveMessage(async (msg) => {
@@ -603,7 +604,8 @@ function buildHtml(
   projectNamesByBg: Record<string, string>,
   flmAddrMap: Record<string, { start: string; end: string }>,
   fwlibSeriesByBg:  Record<string, string> = {},
-  targetNamesByBg:  Record<string, string> = {}
+  targetNamesByBg:  Record<string, string> = {},
+  detectedGccPath?: string
 ): string {
   const flmsJson    = JSON.stringify(availableFlms);
   const addrMapJson = JSON.stringify(flmAddrMap);
@@ -620,7 +622,8 @@ function buildHtml(
         availableFlms,
         fwlibSeriesByBg[bg.name] ?? '',
         targetNamesByBg[bg.name]  ?? '',
-        i === 0 ? machine : null
+        i === 0 ? machine : null,
+        i === 0 ? detectedGccPath : undefined
       )).join('\n')
     : `<p class="hint" style="color:var(--vscode-inputValidation-warningForeground);margin:8px 0 16px">
   No converted project found in the workspace. Convert a .uvprojx/.uvmpw first, then reopen this panel.
@@ -1261,7 +1264,8 @@ function buildProjectSection(
   availableFlms: string[],
   fwlibSeries: string = '',
   defaultTargetName: string = '',
-  machine: MachineSettings | null = null
+  machine: MachineSettings | null = null,
+  detectedGccPath?: string
 ): string {
   const p   = bgName ? bgName + '__' : '';
   const id  = (field: string) => `${p}${field}`;
@@ -1573,7 +1577,7 @@ ${machine ? `<div class="settings-group">
 <div class="row">
   <label>GCC Path (arm-none-eabi-gcc)</label>
   <div style="display:flex;gap:4px">
-    <input id="gccPath" type="text" value="${esc(machine.gccPath)}" placeholder="Leave empty to auto-detect" data-browse-id="gccPathBrowse" style="flex:1">
+    <input id="gccPath" type="text" value="${esc(machine.gccPath)}" placeholder="${detectedGccPath ? esc(detectedGccPath) : 'Leave empty to auto-detect'}" data-browse-id="gccPathBrowse" style="flex:1">
     <button class="btn-secondary" title="Browse" style="padding:0 8px;min-width:30px" onclick="vscode.postMessage({type:'browseFile',browseId:'gccPathBrowse',currentPath:document.getElementById('gccPath').value.trim()})">&#8230;</button>
   </div>
 </div>

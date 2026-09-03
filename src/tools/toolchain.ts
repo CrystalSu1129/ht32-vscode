@@ -160,6 +160,38 @@ export async function locateMake(extensionPath?: string): Promise<string | undef
  * arm-none-eabi-gcc 尋找相關
  * ────────────────────────────────────── */
 
+/**
+ * Shallow scan for arm-none-eabi-gcc.exe under the given root directories.
+ * Recurses at most `maxDepth` levels deep (breadth-first so shallowest wins).
+ * Returns the first match found, preferring newer version numbers via directory name comparison.
+ */
+function findArmGccShallow(roots: string[], maxDepth: number): string | undefined {
+  const candidates: string[] = [];
+
+  function scan(dir: string, depth: number) {
+    if (!fs.existsSync(dir)) { return; }
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+
+    const gcc = path.join(dir, 'bin', 'arm-none-eabi-gcc.exe');
+    if (fs.existsSync(gcc)) { candidates.push(gcc); }
+
+    if (depth < maxDepth) {
+      for (const e of entries) {
+        if (e.isDirectory()) { scan(path.join(dir, e.name), depth + 1); }
+      }
+    }
+  }
+
+  for (const root of roots) {
+    scan(root.replace(/\//g, path.sep), 0);
+  }
+
+  if (candidates.length === 0) { return undefined; }
+  candidates.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+  return candidates[0];
+}
+
 /** In-session cache：同一個 VS Code 視窗內只搜尋一次 */
 let _gccPathCache: string | null | undefined = undefined;  // undefined = not searched yet, null = searched but not found
 
@@ -230,19 +262,17 @@ async function _locateArmGccInner(cfg: vscode.WorkspaceConfiguration): Promise<s
       }
     }
 
-    // 4) winget 安裝的 Arm GNU Toolchain（固定路徑，不做遞迴掃描）
-    const wingetArmRoot = 'C:\\Program Files\\Arm GNU Toolchain';
-    if (fs.existsSync(wingetArmRoot)) {
-      const dirs = fs.readdirSync(wingetArmRoot)
-        .filter(d => fs.statSync(path.join(wingetArmRoot, d)).isDirectory())
-        .sort((a, b) => semverCmp(b, a));
-      for (const d of dirs) {
-        const candidate = path.join(wingetArmRoot, d, 'bin', 'arm-none-eabi-gcc.exe');
-        if (fs.existsSync(candidate)) {
-          logInfo(`locateArmGcc: found winget Arm GNU Toolchain at ${candidate}`);
-          return candidate;
-        }
-      }
+    // 4) Arm 官方安裝程式（各版本子目錄名稱不固定，做 shallow scan）
+    const armInstallRoots = [
+      'C:/Program Files/Arm',
+      'C:/Program Files (x86)/Arm',
+      'C:/Program Files/Arm GNU Toolchain',
+      'C:/Program Files (x86)/Arm GNU Toolchain',
+    ];
+    const shallowFound = findArmGccShallow(armInstallRoots, 3);
+    if (shallowFound) {
+      logInfo(`locateArmGcc: found Arm toolchain at ${shallowFound}`);
+      return shallowFound;
     }
   } else {
     // 5) UNIX：固定常見路徑

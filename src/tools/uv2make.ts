@@ -2040,7 +2040,7 @@ function writeLists(outDir: string, info: Extracted) {
 
 function guessLinkerFlags(linkerScripts: string[] = ['../GNU_ARM/linker.ld']): string {
   const tFlags = linkerScripts.map(s => `-T ${s}`).join(' ');
-  return `-Wl,--gc-sections,--print-memory-usage,--no-warn-rwx-segments,-Map,$(BUILD)/$(TARGET).map ${tFlags}`;
+  return `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${tFlags}`;
 }
 
 /**
@@ -2174,7 +2174,7 @@ export function buildMakefileText(p: UnifiedMakefileParams): string {
 
   const ldTFlags   = p.linkerScripts.map(s => `-T ${s}`).join(' ');
   const ldDepList  = p.linkerScripts.join(' ');
-  const ldFlags    = `-Wl,--gc-sections,--print-memory-usage,--no-warn-rwx-segments,-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(p.useNano ?? true, p.useNosys ?? true)}${extraLDFStr}${ltoFlag}${printfF}${scanfF}`;
+  const ldFlags    = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(p.useNano ?? true, p.useNosys ?? true)}${extraLDFStr}${ltoFlag}${printfF}${scanfF}`;
 
   const cleanSrcs  = p.srcs.filter(s => !s.includes(' '));
   const spacedSrcs = p.srcs.filter(s =>  s.includes(' '));
@@ -2201,16 +2201,19 @@ TARGET := ${p.target}
 BUILD  := build
 
 # ---- Cross-platform helpers ----
+comma := ,
 ifeq ($(OS),Windows_NT)
   SHELL := cmd.exe
   .SHELLFLAGS := /C
   RMDIR := rmdir /S /Q
   MKDIR_P = if not exist "$(subst /,\\\\,$1)" mkdir "$(subst /,\\\\,$1)" 2>NUL & ver>NUL
+  LD_NO_WARN = $(if $(shell "$(subst gcc,ld,$(CC))" --no-warn-rwx-segments 2>&1 | findstr /C:"unrecognized"),,$(comma)--no-warn-rwx-segments)
 else
   SHELL := /bin/sh
   .SHELLFLAGS := -c
   RMDIR := rm -rf
   MKDIR_P = mkdir -p "$1"
+  LD_NO_WARN = $(if $(shell "$(subst gcc,ld,$(CC))" --no-warn-rwx-segments 2>&1 | grep unrecognized),,$(comma)--no-warn-rwx-segments)
 endif
 
 # ---- Toolchain ----
@@ -2886,7 +2889,7 @@ export function regenerateMakefileFlags(
   outDir: string,
   meta: BuildMeta,
   opts: Pick<Uv2MakeOptions, 'optimizationLevel' | 'debugInfo' | 'useNano' | 'useNosys' | 'extraCFlags' | 'extraLDFlags' | 'extraLibs' | 'extraLibNames' | 'extraLibPaths' | 'fpu' | 'floatAbi'
-    | 'useLto' | 'printfFloat' | 'scanfFloat' | 'includePaths'> & { outputName?: string; cDefs?: string[]; aDefs?: string[] }
+    | 'useLto' | 'printfFloat' | 'scanfFloat' | 'includePaths'> & { outputName?: string; cDefs?: string[]; aDefs?: string[]; cc?: string }
 ): void {
   const makefilePath = path.join(outDir, 'Makefile');
   if (!fs.existsSync(makefilePath)) {
@@ -2931,7 +2934,32 @@ export function regenerateMakefileFlags(
     ? linkerScripts.map(s => `-T ${s}`).join(' ')
     : '-T linker_script.ld';
 
-  const newLDFlags = `-Wl,--gc-sections,--print-memory-usage,--no-warn-rwx-segments,-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(opts.useNano, opts.useNosys)}${extraLDF}${ltoFlag}${printfF}${scanfF}`;
+  const newLDFlags = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(opts.useNano, opts.useNosys)}${extraLDF}${ltoFlag}${printfF}${scanfF}`;
+
+  // Upgrade old Makefiles that predate LD_NO_WARN dynamic detection.
+  if (!/^LD_NO_WARN\s*[=:]/m.test(content)) {
+    const ldNoWarnBlock = [
+      `comma := ,`,
+      `ifeq ($(OS),Windows_NT)`,
+      `  LD_NO_WARN = $(if $(shell "$(subst gcc,ld,$(CC))" --no-warn-rwx-segments 2>&1 | findstr /C:"unrecognized"),,$(comma)--no-warn-rwx-segments)`,
+      `else`,
+      `  LD_NO_WARN = $(if $(shell "$(subst gcc,ld,$(CC))" --no-warn-rwx-segments 2>&1 | grep unrecognized),,$(comma)--no-warn-rwx-segments)`,
+      `endif`,
+    ].join('\n');
+    content = content.replace(/^(LDFLAGS\s*:=)/m, `${ldNoWarnBlock}\n$1`);
+  }
+
+  // Update CC / AR / OBJCOPY / OBJDUMP / SIZE when gcc path changed.
+  if (opts.cc) {
+    const gcc      = opts.cc.replace(/\\/g, '/');
+    const tcPrefix = gcc.replace(/gcc(\.exe)?$/i, '');
+    content = content.replace(/^CC\s*:=.*$/m,      `CC      := ${gcc}`);
+    content = content.replace(/^AR\s*:=.*$/m,      `AR      := ${tcPrefix}ar`);
+    content = content.replace(/^OBJCOPY\s*:=.*$/m, `OBJCOPY := ${tcPrefix}objcopy`);
+    content = content.replace(/^OBJDUMP\s*:=.*$/m, `OBJDUMP := ${tcPrefix}objdump`);
+    content = content.replace(/^SIZE\s*:=.*$/m,    `SIZE    := ${tcPrefix}size`);
+  }
+
   // Write aDefs to adefines.list if provided by caller (Settings WebView save).
   if (opts.aDefs !== undefined) {
     fs.writeFileSync(path.join(outDir, 'adefines.list'), opts.aDefs.map(d => `-D${d}`).join(' '), 'utf8');

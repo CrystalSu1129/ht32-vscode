@@ -348,6 +348,7 @@ interface MakefileParams {
   useNano?:     boolean;
   useNosys?:    boolean;
   hasFpuHw?:    boolean;  // pre-computed by caller; if undefined, derived from armCore + header scan
+  extraCFlags?: string;
 }
 
 function buildMakefileText(p: MakefileParams): { text: string; allSrcs: string[]; incsStr: string; defsStr: string } {
@@ -398,6 +399,7 @@ function buildMakefileText(p: MakefileParams): { text: string; allSrcs: string[]
     floatAbi:      hasFpuHw ? 'hard' : 'soft',
     useNano:       p.useNano,
     useNosys:      p.useNosys,
+    extraCFlags:   p.extraCFlags,
     // htChipNum 已改由 defines.list 傳遞（USE_HT32_CHIP=X 在 defines[]），與 convert 路徑一致
   });
 
@@ -1515,6 +1517,7 @@ export async function generateProjectFiles(
     useNano:     result.useNano,
     useNosys:    result.useNosys,
     hasFpuHw,
+    extraCFlags: '-std=gnu11',
   });
   fs.writeFileSync(path.join(bgDir, 'Makefile'), makefileText);
   fs.writeFileSync(path.join(bgDir, 'sources.list'),  allSrcs.join('\n'));
