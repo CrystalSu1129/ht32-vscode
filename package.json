@@ -645,7 +645,7 @@
       },
       {
         "view": "ht32ProjectView",
-        "contents": "Convert Project\n\n[Convert a uVision Project](command:ht32.convertUvision)\n[Convert a HT32-IDE Project](command:ht32.convertHt32Ide)\n",
+        "contents": "Convert Project\n\n[Convert a uVision Project](command:ht32.convertUvision)\n[Convert HT32-IDE Projects](command:ht32.convertHt32Ide)\n",
         "when": "!ht32.hasProject"
       }
     ]

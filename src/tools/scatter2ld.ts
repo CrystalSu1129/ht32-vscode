@@ -225,6 +225,146 @@ function isStandardRegion(body: string): boolean {
  * Main converter
  * ───────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────
+ * Section block generators (module-level, shared between full-gen and template mode)
+ * ───────────────────────────────────────────── */
+
+function customSectBlock(cs: CustomSection): string {
+  const noload = cs.isNoLoad ? ' (NOLOAD)' : '';
+  const initSymbols = !cs.isRam ? `
+  _${cs.sectName}_init_base   = LOADADDR(.${cs.sectName});
+  _${cs.sectName}_init_length = SIZEOF(.${cs.sectName});` : '';
+  return `${initSymbols}
+  .${cs.sectName}${noload} :
+  {
+    . = ALIGN(4);
+    _${cs.sectName}_start = .;
+    *(.${cs.sectName})
+    *(.${cs.sectName}*)
+    . = ALIGN(4);
+    _${cs.sectName}_end = .;
+  } >${cs.ldMem}`;
+}
+
+function objPinnedSectBlock(r: MemRegion): string {
+  const sectName = r.ldName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const keilDesc = r.objPlacements!.map(p => `${p.glob}(${p.attr})`).join(', ');
+  const lines = r.objPlacements!.map(p => {
+    const objFilter = p.glob === '*.o' ? '*' : `*${p.glob}`;
+    const sectList  = p.sects.join(' ');
+    const keepLine  = `    KEEP(${objFilter}(${sectList}))`;
+    return p.isFirst ? `    /* +FIRST */\n${keepLine}` : keepLine;
+  }).join('\n');
+  return (
+    `  /* Keil: ${keilDesc} — pinned to ${r.ldName} at ${hex(r.origin)} */\n` +
+    `  .${sectName} :\n  {\n    . = ALIGN(4);\n${lines}\n    . = ALIGN(4);\n  } >${r.ldName}`
+  );
+}
+
+/**
+ * Template-based generation: patch FWLib linker.ld MEMORY block and insert extra SECTIONS.
+ * Used when opts.templateLd is provided. Returns a modified copy of the template.
+ * All patch failures are reported as warnings (never silently ignored).
+ */
+function buildFromTemplate(
+  templateLd:     string,
+  memRegions:     MemRegion[],
+  customSections: CustomSection[],
+  flashRegion:    MemRegion | undefined,
+  ramRegion:      MemRegion | undefined,
+  warnings:       string[]
+): Scatter2LdResult {
+  let out = templateLd;
+
+  // ── Patch MEMORY: FLASH ────────────────────────────────────────────────────
+  // Template FLASH line has no leading whitespace: FLASH (rx)     : ORIGIN = ...
+  const flashRe = /^FLASH\s*\([^)]*\)\s*:\s*ORIGIN\s*=\s*[^,]+,\s*LENGTH\s*=\s*[^\r\n]+/m;
+  if (flashRegion) {
+    if (!flashRe.test(out)) {
+      warnings.push('Template MEMORY patch failed: FLASH entry not found — verify template has standard FLASH region.');
+    } else if (flashRegion.length > 0) {
+      out = out.replace(flashRe, `FLASH (rx)     : ORIGIN = ${hex(flashRegion.origin)}, LENGTH = ${hex(flashRegion.length)}`);
+    } else if (flashRegion.origin !== 0) {
+      // Non-zero IAP offset but length unknown — patch ORIGIN only, leave template LENGTH intact
+      out = out.replace(flashRe, m => m.replace(/ORIGIN\s*=\s*[\w.]+/, `ORIGIN = ${hex(flashRegion.origin)}`));
+    }
+  } else {
+    warnings.push('No ROM/FLASH region found in scatter file — FLASH MEMORY entry not patched.');
+  }
+
+  // ── Patch MEMORY: RAM ──────────────────────────────────────────────────────
+  const ramRe = /^RAM\s*\([^)]*\)\s*:\s*ORIGIN\s*=\s*[^,]+,\s*LENGTH\s*=\s*[^\r\n]+/m;
+  if (ramRegion) {
+    if (!ramRe.test(out)) {
+      warnings.push('Template MEMORY patch failed: RAM entry not found — verify template has standard RAM region.');
+    } else if (ramRegion.length > 0) {
+      out = out.replace(ramRe, `RAM (xrw)      : ORIGIN = ${hex(ramRegion.origin)}, LENGTH = ${hex(ramRegion.length)}`);
+    } else if (ramRegion.origin !== 0x20000000) {
+      out = out.replace(ramRe, m => m.replace(/ORIGIN\s*=\s*[\w.]+/, `ORIGIN = ${hex(ramRegion.origin)}`));
+    }
+  } else {
+    warnings.push('No RAM region found in scatter file — RAM MEMORY entry not patched.');
+  }
+
+  // ── Insert extra MEMORY regions (IAP, SPIM, EXT_RAM, etc.) ────────────────
+  // Sorted by origin; inserted just before the MEMORY block closing brace.
+  const extraMem = memRegions.filter(r => r !== flashRegion && r !== ramRegion);
+  if (extraMem.length > 0) {
+    const sorted = [...extraMem].sort((a, b) => a.origin - b.origin);
+    const lines = sorted.map(r =>
+      `${r.ldName.padEnd(8)} (${r.attrs.padEnd(3)}) : ORIGIN = ${hex(r.origin)}, LENGTH = ${hex(r.length)}`
+    ).join('\n');
+    const prev = out;
+    out = out.replace(/(MEMORY\s*\{)([\s\S]*?)(\})/, `$1$2${lines}\n$3`);
+    if (out === prev) warnings.push('Template MEMORY patch failed: could not locate MEMORY block to insert extra regions.');
+  }
+
+  // ── Extra SECTIONS blocks ──────────────────────────────────────────────────
+  const binarySectRegions = memRegions.filter(r => !r.hasCode && r.binarySects && r.binarySects.length > 0);
+  const bareObjRxRegions  = memRegions.filter(r => r.attrs === 'rx' && !r.hasCode && r.bareObjRefs && r.bareObjRefs.length > 0);
+  const objPinnedReg      = memRegions.filter(r => !r.hasCode && !r.hasData && r.objPlacements && r.objPlacements.length > 0);
+
+  // Flash-targeted sections (rx): binary-embed, bare .o, pinned-object, custom rx
+  const rxSectParts: string[] = [];
+  for (const r of binarySectRegions) {
+    const sects = r.binarySects!;
+    const sectLines = sects.map(s => `    KEEP(*(.${s}))\n    KEEP(*(.${s}*))`).join('\n');
+    rxSectParts.push(
+      `  /* Binary-embed region "${r.ldName}" at ${hex(r.origin)} */\n  .${sects[0]} :\n  {\n${sectLines}\n  } >${r.ldName}`
+    );
+  }
+  for (const r of bareObjRxRegions) {
+    const sectName = r.ldName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const objLines = r.bareObjRefs!.map(o => `    KEEP(*${o}(.rodata .rodata* .data .data*))`).join('\n');
+    rxSectParts.push(
+      `  /* Bare .o at fixed Flash address — verify section names match .c content */\n  .${sectName} :\n  {\n${objLines}\n  } >${r.ldName}`
+    );
+  }
+  for (const r of objPinnedReg) rxSectParts.push(objPinnedSectBlock(r));
+  rxSectParts.push(...customSections.filter(cs => !cs.isRam).map(customSectBlock));
+
+  // RAM-targeted sections (xrw): custom named sections
+  const rwSectParts = customSections.filter(cs => cs.isRam).map(customSectBlock);
+
+  // Insert rx sections just before .isr_vector (after option-byte sections already in template)
+  if (rxSectParts.length > 0) {
+    const rxText = rxSectParts.join('\n\n');
+    const prev = out;
+    out = out.replace(/([ \t]*\.isr_vector\b)/, `${rxText}\n\n$1`);
+    if (out === prev) warnings.push('Template SECTIONS patch failed: could not locate .isr_vector to insert flash sections.');
+  }
+
+  // Insert rw sections just before /DISCARD/
+  if (rwSectParts.length > 0) {
+    const rwText = rwSectParts.join('\n\n');
+    const prev = out;
+    out = out.replace(/([ \t]*\/DISCARD\/)/, `${rwText}\n\n  $1`);
+    if (out === prev) warnings.push('Template SECTIONS patch failed: could not locate /DISCARD/ to insert RAM sections.');
+  }
+
+  return { ld: out, warnings, codeRegionName: 'FLASH', ramRegionName: 'RAM' };
+}
+
 export function scatter2ld(
   sctContent: string,
   opts: {
@@ -234,6 +374,7 @@ export function scatter2ld(
     ramLength?:   string;   // override RAM region length (from Settings.ini); hex string e.g. "0x18000"
     romOrigin?:   string;   // flash start address from uvprojx/PDSC; hex string e.g. "0x08000000"
     romLength?:   string;   // flash total size from uvprojx/PDSC; hex string e.g. "0x00080000"
+    templateLd?:  string;   // FWLib linker.ld text to use as base (template-based mode)
   } = {}
 ): Scatter2LdResult {
 
@@ -270,13 +411,13 @@ export function scatter2ld(
       // leave as 0 so the ramLength override below applies correctly.
       let length = er.size > 0 ? er.size : (attrs === 'rx' ? lr.size : 0);
 
-      // Any non-code rx region inside internal flash without an explicit size
-      // (binary-embed, digest, custom sections, etc.) gets the remaining flash space
+      // Any rx region inside internal flash without an explicit size gets the remaining flash space
       // so GNU LD does not error with "region full (length=0)".
-      // Requires romOrigin+romLength from the caller; without them we cannot compute
-      // the flash end and leave length=0 so the warning below fires.
+      // This covers both non-code regions (binary-embed, etc.) and IAP/AP code regions where
+      // the scatter AP load region has no explicit size — length = romEnd - er.base.
+      // Requires romOrigin+romLength from the caller; without them length stays 0 and warning fires.
       // Regions outside [romOrigin, romEnd) (e.g. SPIM) are left untouched.
-      if (length === 0 && attrs === 'rx' && !hasCode && opts.romOrigin && opts.romLength) {
+      if (length === 0 && attrs === 'rx' && opts.romOrigin && opts.romLength) {
         const romStart = parseNum(opts.romOrigin);
         const romEnd   = romStart + parseNum(opts.romLength);
         if (er.base >= romStart && er.base < romEnd) {
@@ -398,6 +539,11 @@ export function scatter2ld(
     }
   }
 
+  // ── Template-based mode: patch FWLib linker.ld instead of generating from scratch ──
+  if (opts.templateLd) {
+    return buildFromTemplate(opts.templateLd, memRegions, customSections, flashRegion, ramRegion, warnings);
+  }
+
   // Use expression form so patchLdStackTop() can cap _estack to Settings.ini safe value.
   const ramName    = ramRegion?.ldName ?? 'RAM';
   const estack     = ramRegion ? `ORIGIN(${ramName}) + LENGTH(${ramName})` : '0x20010000';
@@ -415,25 +561,6 @@ export function scatter2ld(
     `  ${r.ldName.padEnd(8)} (${r.attrs.padEnd(3)}) : ORIGIN = ${hex(r.origin)}, LENGTH = ${hex(r.length)}`
   ).join('\n');
 
-  // ── Build custom section blocks ──
-  function customSectBlock(cs: CustomSection): string {
-    const noload = cs.isNoLoad ? ' (NOLOAD)' : '';
-    const initSymbols = !cs.isRam ? `
-  _${cs.sectName}_init_base   = LOADADDR(.${cs.sectName});
-  _${cs.sectName}_init_length = SIZEOF(.${cs.sectName});` : '';
-
-    return `${initSymbols}
-  .${cs.sectName}${noload} :
-  {
-    . = ALIGN(4);
-    _${cs.sectName}_start = .;
-    *(.${cs.sectName})
-    *(.${cs.sectName}*)
-    . = ALIGN(4);
-    _${cs.sectName}_end = .;
-  } >${cs.ldMem}`;
-  }
-
   const customBlocks = customSections.map(customSectBlock).join('\n');
 
   // Non-code rx regions that have explicit section content (e.g. .iap binary embed).
@@ -445,21 +572,6 @@ export function scatter2ld(
 
   // Regions with "name.o(+XO/+RO)" pinned-object placements (e.g. Partial Lock flash sections).
   const objPinnedRegions  = memRegions.filter(r => !r.hasCode && !r.hasData && r.objPlacements && r.objPlacements.length > 0);
-
-  function objPinnedSectBlock(r: MemRegion): string {
-    const sectName = r.ldName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-    const keilDesc = r.objPlacements!.map(p => `${p.glob}(${p.attr})`).join(', ');
-    const lines = r.objPlacements!.map(p => {
-      const objFilter = p.glob === '*.o' ? '*' : `*${p.glob}`;
-      const sectList  = p.sects.join(' ');
-      const keepLine  = `    KEEP(${objFilter}(${sectList}))`;
-      return p.isFirst ? `    /* +FIRST */\n${keepLine}` : keepLine;
-    }).join('\n');
-    return (
-      `  /* Keil: ${keilDesc} — pinned to ${r.ldName} at ${hex(r.origin)} */\n` +
-      `  .${sectName} :\n  {\n    . = ALIGN(4);\n${lines}\n    . = ALIGN(4);\n  } >${r.ldName}`
-    );
-  }
 
   // ── Assemble the full .ld ──
   const ld = `/* Auto-generated by scatter2ld from ${deviceName} scatter file */

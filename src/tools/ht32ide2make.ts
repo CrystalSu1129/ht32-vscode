@@ -1109,16 +1109,14 @@ export function convertHt32IdeProject(
   const baseMeta = buildProjectMeta(patchedResult, wsRoot);
   const allLdRelPaths: string[] = [];
   if (!result.isLibrary && ldFileName) {
-    const ldStartupGroup = Object.keys(baseMeta.groups).find(g =>
-      baseMeta.groups[g].some((f: string) => /\.s$/i.test(f))
-    ) ?? 'cmsis';
+    const ldGroup = 'Linker';
     allLdRelPaths.push(path.relative(bgDir, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/'));
-    (baseMeta.groups[ldStartupGroup] ??= []).push(
+    (baseMeta.groups[ldGroup] ??= []).push(
       path.relative(wsRoot, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/')
     );
     for (const eld of result.extraLinkerScripts ?? []) {
       allLdRelPaths.push(path.relative(bgDir, path.join(gnuArmDir, path.basename(eld))).replace(/\\/g, '/'));
-      (baseMeta.groups[ldStartupGroup] ??= []).push(
+      (baseMeta.groups[ldGroup] ??= []).push(
         path.relative(wsRoot, path.join(gnuArmDir, path.basename(eld))).replace(/\\/g, '/')
       );
     }

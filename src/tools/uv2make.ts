@@ -110,11 +110,29 @@ type Extracted = {
 
 
 
-function remapInfoToOutDir(info: Extracted, projDir: string, outDirAbs: string, warnings?: ConversionWarning[]): Extracted {
+function remapInfoToOutDir(info: Extracted, projDir: string, outDirAbs: string, warnings?: ConversionWarning[], uvprojxPath?: string): Extracted {
   // 將原本以 uvprojx 目錄為基準的相對路徑，轉成以 outDir 為基準
   const remapRel = (rel: string): string => {
     const abs = path.resolve(projDir, rel);          // 先變成絕對
     return normalize(path.relative(outDirAbs, abs)); // 再轉成以 build-gen 為基準
+  };
+
+  // Lazy-read raw uvprojx lines for line-number lookup (only when a bad path is found)
+  let rawLines: string[] | undefined;
+  const findToken = (segment: string): { line: number; col: number } | undefined => {
+    if (!uvprojxPath) return undefined;
+    if (!rawLines) {
+      try { rawLines = fs.readFileSync(uvprojxPath, 'utf8').split('\n'); } catch { rawLines = []; }
+    }
+    // Keil XML uses backslashes; try both forms so ../spim matches ..\spim
+    const segBs = segment.replace(/\//g, '\\');
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      let col = line.indexOf(segBs);
+      if (col < 0) col = line.indexOf(segment);
+      if (col >= 0) return { line: i, col };
+    }
+    return undefined;
   };
 
   const sources  = info.sources.map(remapRel);
@@ -122,7 +140,8 @@ function remapInfoToOutDir(info: Extracted, projDir: string, outDirAbs: string, 
     const abs = path.resolve(projDir, rel);
     if (!fs.existsSync(abs)) {
       logWarn(`Include path does not exist (check project depth): ${abs}`);
-      warnings?.push({ message: `Include path does not exist: ${abs}` });
+      const pos = findToken(rel);
+      warnings?.push({ message: `Include path does not exist: ${abs}`, line: pos?.line, col: pos?.col, len: rel.length });
     }
     return normalize(path.relative(outDirAbs, abs));
   });
@@ -142,7 +161,10 @@ function remapInfoToOutDir(info: Extracted, projDir: string, outDirAbs: string, 
 /** A warning generated during conversion, suitable for display in the Problems panel. */
 export interface ConversionWarning {
   message: string;
-  file?: string;  // absolute path of the file to attach the diagnostic to
+  file?: string;   // absolute path of the file to attach the diagnostic to
+  line?: number;   // 0-based line index within that file
+  col?:  number;   // 0-based column of the highlighted token start
+  len?:  number;   // length of the highlighted token
 }
 
 export interface Uv2MakeResult {
@@ -314,7 +336,7 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
   // GNU_ARM/ is a sibling of Project/ inside HT32_VSCode/ — startup .s files go here
   const gnuArmRoot = path.join(path.dirname(outDirAbs), 'GNU_ARM');
   const infoRaw = extractProjectInfo(doc, projDir, fallbackName, outDirAbs, opts.extPath, gnuArmRoot);
-  const info = remapInfoToOutDir(infoRaw, projDir, outDirAbs, convWarnings);
+  const info = remapInfoToOutDir(infoRaw, projDir, outDirAbs, convWarnings, opts.uvprojx);
 
   if (infoRaw.symdefsOutputFile) {
     const symsLdName = path.basename(infoRaw.symdefsOutputFile, '.o') + '.ld';
@@ -547,6 +569,23 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
     }
   }
 
+  // MDK uvprojx 不列 printf.c（ARMCC 有自己的 printf），但 GCC 用 newlib printf 體積大很多。
+  // 若 FWLib 的 ht32_serial.c 已在 sources（代表 retarget 啟用），補加同目錄的 printf.c。
+  // 不補加時 GCC 會 link newlib printf，size 比 HT32-IDE convert 大 ~3KB。
+  if (!infoRaw.isLibrary && hasCsrcs && !info.sources.some(s => /\bprintf\.c$/i.test(s))) {
+    const serialSrcRel = info.sources.find(s => /library[/\\]HT32\w+_Driver[/\\]src[/\\]ht32_serial\.c$/i.test(s));
+    if (serialSrcRel) {
+      const driverSrcDir = path.dirname(path.resolve(outDirAbs, serialSrcRel));
+      const printfAbs    = path.join(driverSrcDir, 'printf.c');
+      if (fs.existsSync(printfAbs)) {
+        const printfRel = path.relative(outDirAbs, printfAbs).replace(/\\/g, '/');
+        info.sources.push(printfRel);
+        implicitSourcesRel.push(printfRel);
+        logInfo(`uv2make: printf.c from lib: ${printfAbs}`);
+      }
+    }
+  }
+
   // 產生 ht32_stack_analysis.c（app only）：補上 GCC 版 StackUsageAnalysisInit()（FWLib 只有 Keil 實作）
   // Library projects produce .a output and have no startup/linker, so stack analysis is irrelevant.
   // Pure-assembly projects (hasCsrcs=false) have no FWLib includes; skip to avoid ht32.h not found.
@@ -580,15 +619,10 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
 
   const projectRoot = path.dirname(path.dirname(outDirAbs));
 
-  // Find the startup group (typically 'CMSIS') for the .ld file.
-  const startupGroup = Object.keys(metaGroups).find(g =>
-    metaGroups[g].some(f => /\.s$/i.test(f))
-  ) ?? 'CMSIS';
-
-  // Add .ld file alongside startup .s in the CMSIS group (app only; library has no linker script).
+  // Add .ld to Linker group (app only).
   if (ldRelPath) {
     const ldAbsPath = path.resolve(outDirAbs, ldRelPath);
-    (metaGroups[startupGroup] ??= []).push(normalize(path.relative(projectRoot, ldAbsPath)));
+    (metaGroups['Linker'] ??= []).push(normalize(path.relative(projectRoot, ldAbsPath)));
   }
 
   // Extension-added sources (syscalls, retarget, stack_analysis) go into a visible 'vscode'
@@ -2676,11 +2710,15 @@ export function lookupSramFromSettings(deviceName: string, extPath: string): str
   return undefined;
 }
 
-function convertSctToLd(sctText: string, _templateRoot: string, deviceName?: string, heapSize?: string, stackSize?: string, ramLength?: string, sctFile?: string, warnings?: ConversionWarning[], romOrigin?: string, romLength?: string): { ld: string; codeRegionName: string } {
-  const result = scatter2ld(sctText, { deviceName, heapSize, stackSize, ramLength, romOrigin, romLength });
+function convertSctToLd(sctText: string, _templateRoot: string, deviceName?: string, heapSize?: string, stackSize?: string, ramLength?: string, sctFile?: string, warnings?: ConversionWarning[], romOrigin?: string, romLength?: string, templateLd?: string): { ld: string; codeRegionName: string } {
+  const result = scatter2ld(sctText, { deviceName, heapSize, stackSize, ramLength, romOrigin, romLength, templateLd });
   for (const w of result.warnings) {
     logWarn(`scatter2ld: ${w}`);
-    warnings?.push({ message: `scatter2ld: ${w}`, file: sctFile });
+    // "Verify section names" = informational (conversion succeeded, user should check) → output channel only.
+    // Everything else (patch failures, LENGTH=0, unrecognized content, can't-convert) → Problems panel.
+    if (!/Verify section names match actual/.test(w)) {
+      warnings?.push({ message: `scatter2ld: ${w}`, file: sctFile ?? '' });
+    }
   }
   return { ld: result.ld, codeRegionName: result.codeRegionName };
 }
@@ -2703,25 +2741,71 @@ function generateLinkerScript(outDir: string, projDir: string, info: Extracted, 
     }
     try {
       const sctText = fs.readFileSync(scatterAbs, "utf8");
-      // 49x FWLib GCC startup has no .heap/.stack sections → scatter2ld must allocate via _Min_Heap/Stack_Size.
-      // STD keil2gnu/FWLib startup allocates via .space in .s → pass undefined to keep _Min_* = 0x0.
-      // If heapSize is undefined (no AREA HEAP / .section ".heap" in Keil startup), the original project has no heap;
-      // preserve that as 0x0 — do not invent a default.
       const is49xGccTemplate = !!templateRoot && /device_support[/\\]startup[/\\]gcc/i.test(templateRoot);
       const scatter49xHeap  = is49xGccTemplate ? heapSize  : undefined;
       const scatter49xStack = is49xGccTemplate ? stackSize : undefined;
-      const sctResult = convertSctToLd(sctText, '', info.projectName ?? undefined, scatter49xHeap, scatter49xStack, ramLength, scatterAbs, warnings, info.romOrigin, info.romLength);
-      let ldText = sctResult.ld;
-      // scatter2ld preserves scatter sizes faithfully; only patch code region LENGTH when
-      // the scatter had no size (outputs 0x00000000), falling back to uvprojx ROM info.
-      if (info.romLength && sctResult.codeRegionName) {
-        const regionPat = sctResult.codeRegionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        ldText = ldText.replace(
-          new RegExp(`(${regionPat}\\s*\\([^)]*\\)\\s*:\\s*ORIGIN\\s*=\\s*[^,]+,\\s*LENGTH\\s*=\\s*)0x00000000\\b`),
-          `$1${info.romLength}`
-        );
+
+      // Find template linker.ld to use as base (template-based scatter conversion).
+      // Same search logic as the non-scatter path below.
+      let sctTemplateLd: string | undefined;
+      if (templateRoot) {
+        const linkerDir49x = path.join(templateRoot, 'linker');
+        if (fs.existsSync(linkerDir49x)) {
+          const ldFiles = fs.readdirSync(linkerDir49x).filter(f => f.endsWith('_FLASH.ld'));
+          if (ldFiles.length) {
+            const mcuU = (mcu ?? '').toUpperCase().replace(/\s/g, '');
+            const matchLd = ldFiles.find(f => f.toUpperCase() === `${mcuU}_FLASH.LD`)
+                         ?? ldFiles.find(f => mcuU && f.toUpperCase().startsWith(mcuU.substring(0, 9)))
+                         ?? ldFiles[0];
+            sctTemplateLd = fs.readFileSync(path.join(linkerDir49x, matchLd), 'utf8');
+          }
+        } else {
+          const fwlLd = path.join(templateRoot, 'linker.ld');
+          if (fs.existsSync(fwlLd)) {
+            sctTemplateLd = fs.readFileSync(fwlLd, 'utf8');
+          } else if (extPath) {
+            const fwlRoot    = path.resolve(templateRoot, '..', '..', '..', '..');
+            const bundledDir = bundledGnuDirFromFwlRoot(fwlRoot, extPath);
+            const cand       = bundledDir ? path.join(bundledDir, 'linker.ld') : undefined;
+            if (cand && fs.existsSync(cand)) sctTemplateLd = fs.readFileSync(cand, 'utf8');
+          }
+        }
       }
-      if (stackSafeLength) ldText = patchLdStackTop(ldText, stackSafeLength);
+
+      const sctResult = convertSctToLd(sctText, '', info.projectName ?? undefined, scatter49xHeap, scatter49xStack, ramLength, scatterAbs, warnings, info.romOrigin, info.romLength, sctTemplateLd);
+      let ldText = sctResult.ld;
+
+      if (sctTemplateLd) {
+        // Template-based path: apply same post-patches as non-scatter template path.
+        if (is49xGccTemplate) {
+          ldText = ldText.replace(
+            /(_estack\s*=\s*)0x[\da-fA-F]+\s*;([^\n]*)/,
+            '$1ORIGIN(RAM) + LENGTH(RAM); /* end of RAM */'
+          );
+          if (heapSize) {
+            const enfH = enforceMinHeap(heapSize);
+            if (enfH !== heapSize) {
+              warnings?.push({ message: `_Min_Heap_Size=${heapSize} enforced to ${enfH} (GCC newlib-nano requires heap for printf)`, file: '' });
+              heapSize = enfH;
+            }
+            ldText = ldText.replace(/(_Min_Heap_Size\s*=\s*)[^;]+;/, `$1${heapSize};`);
+          }
+          if (stackSize) ldText = ldText.replace(/(_Min_Stack_Size\s*=\s*)[^;]+;/, `$1${stackSize};`);
+        }
+        if (stackSafeLength) ldText = patchLdStackTop(ldText, stackSafeLength);
+        ldText = patchLdStackSections(ldText);
+      } else {
+        // Old fallback path (no template found): patch LENGTH=0 and stackSafeLength only.
+        if (info.romLength && sctResult.codeRegionName) {
+          const regionPat = sctResult.codeRegionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          ldText = ldText.replace(
+            new RegExp(`(${regionPat}\\s*\\([^)]*\\)\\s*:\\s*ORIGIN\\s*=\\s*[^,]+,\\s*LENGTH\\s*=\\s*)0x00000000\\b`),
+            `$1${info.romLength}`
+          );
+        }
+        if (stackSafeLength) ldText = patchLdStackTop(ldText, stackSafeLength);
+      }
+
       fs.writeFileSync(outLd, ldText);
       logInfo(`Generated ${scatterLdName} from scatter: ${scatterAbs}`);
       return scatterLdName;

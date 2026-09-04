@@ -1332,8 +1332,8 @@ export async function generateProjectFiles(
   if (result.usePrintf && outputType === 'app') {
     defines.push('PRINTF_ALIAS_STANDARD_FUNCTION_NAMES_HARD=1');
     const printfDir = path.join(extPath, 'templates', 'printf');
-    copyFileIfExists(path.join(printfDir, 'printf.c'), path.join(srcDir, 'printf.c'));
-    copyFileIfExists(path.join(printfDir, 'printf.h'), path.join(srcDir, 'printf.h'));
+    copyFileIfExists(path.join(printfDir, 'printf.c'), path.join(srcDir, 'printf.c'), true);
+    copyFileIfExists(path.join(printfDir, 'printf.h'), path.join(srcDir, 'printf.h'), true);
     fs.writeFileSync(path.join(srcDir, 'ht32_putchar.c'), generatePutcharC());
     copiedUserSrcs.push('printf.c', 'ht32_putchar.c');
   }
@@ -1362,51 +1362,59 @@ export async function generateProjectFiles(
   let metaGroups: Record<string, string[]>;
 
   if (!isSeries49x) {
-    // ── STD 系列：User / Config / CMSIS / Library / Utilities ──
-    // (syscalls 已顯示在 TreeView Generated group，不重複放)
-    // Config: ht32_op.c + conf.h（header）
+    // ── STD 系列：User / Config / GNU_ARM / CMSIS / Retarget / Library / Utilities ──
     const CONFIG_SET = new Set(['ht32_op.c']);
     const userMeta = copiedUserSrcs
       .filter(f => !CONFIG_SET.has(f) && f !== systemFileForMeta)
       .map(f => `${srcRelFromProject}/${f}`);
     const configMeta = [
       ...copiedUserSrcs.filter(f => CONFIG_SET.has(f)).map(f => `${srcRelFromProject}/${f}`),
-      ...(confHFile    ? [`${srcRelFromProject}/${confHFile}`]    : []),
+      ...(confHFile     ? [`${srcRelFromProject}/${confHFile}`]     : []),
       ...(usbdConfHFile ? [`${srcRelFromProject}/${usbdConfHFile}`] : []),
+      // ht32_board_config.h — present in FWLib IP/Example/, copied to src/
+      ...(fs.existsSync(path.join(srcDir, 'ht32_board_config.h')) ? [`${srcRelFromProject}/ht32_board_config.h`] : []),
     ];
-    // CMSIS: system_ht32*.c + startup.s
+    // CMSIS: system_ht32*.c only
     const cmsisMeta: string[] = [
       ...(systemFileForMeta ? [`${srcRelFromProject}/${systemFileForMeta}`] : []),
-      ...(outputType === 'app' ? [`${gnuArmRelFromProject}/${startupFile}`] : []),
     ];
-    // Utilities: utilities/ht32_board.c（若有）
+    // GNU_ARM: startup.s
+    const gnuArmMeta: string[] = outputType === 'app' ? [`${gnuArmRelFromProject}/${startupFile}`] : [];
+    // Utilities: utilities/ht32_board.c
     const utilityRels = fwlibSrcs.filter(rel => /^utilities\//i.test(rel));
     const utilitiesMeta = utilityRels.map(rel => toProjectRel(path.join(fwlibPath, rel)));
+    // Retarget: ht32_retarget*.c / ht32_serial.c / printf.c (from FWLib library)
+    const RETARGET_RE = /^(ht32_retarget[^/\\]*|ht32_serial|printf)\.c$/i;
+    const retargetRels = fwlibSrcs.filter(rel => !utilityRels.includes(rel) && RETARGET_RE.test(path.basename(rel)));
+    const retargetMeta = retargetRels.map(rel => toProjectRel(path.join(fwlibPath, rel)));
     const libMeta = fwlibSrcs
-      .filter(rel => !utilityRels.includes(rel))
+      .filter(rel => !utilityRels.includes(rel) && !retargetRels.includes(rel))
       .map(rel => toProjectRel(path.join(fwlibPath, rel)));
 
     metaGroups = {
-      User:     userMeta,
-      Config:   configMeta,
-      CMSIS:    cmsisMeta,
-      Library:  libMeta,
+      User:      userMeta,
+      Config:    configMeta,
+      'GNU_ARM': gnuArmMeta,
+      CMSIS:     cmsisMeta,
+      ...(retargetMeta.length ? { Retarget: retargetMeta } : {}),
+      Library:   libMeta,
       ...(utilitiesMeta.length ? { Utilities: utilitiesMeta } : {}),
     };
   } else {
-    // ── 49x 系列：user / bsp / firmware / cmsis ──
+    // ── 49x 系列：user / bsp / firmware / cmsis / gnu_arm ──
     const userMeta = copiedUserSrcs
       .filter(f => !bspSrcsForMeta.includes(f))
       .map(f => `${srcRelFromProject}/${f}`);
     const bspMeta = bspSrcsForMeta.map(f => `${srcRelFromProject}/${f}`);
-    // cmsis: system（fwlib 絕對路徑）+ startup.s
+    // cmsis: system（fwlib 絕對路徑）のみ
     const systemRel = systemFileForMeta
       ? fwlibSrcs.find(rel => rel.endsWith(systemFileForMeta!))
       : undefined;
     const cmsisMeta: string[] = [
       ...(systemRel ? [toProjectRel(path.join(fwlibPath, systemRel))] : []),
-      ...(outputType === 'app' ? [`${gnuArmRelFromProject}/${startupFile}`] : []),
     ];
+    // gnu_arm: startup.s
+    const gnuArmMeta49x: string[] = outputType === 'app' ? [`${gnuArmRelFromProject}/${startupFile}`] : [];
     // firmware: FWLib drivers（排除 system）
     const firmwareMeta = fwlibSrcs
       .filter(rel => !systemRel || rel !== systemRel)
@@ -1417,6 +1425,7 @@ export async function generateProjectFiles(
       ...(bspMeta.length ? { bsp: bspMeta } : {}),
       firmware: firmwareMeta,
       cmsis:    cmsisMeta,
+      ...(gnuArmMeta49x.length ? { gnu_arm: gnuArmMeta49x } : {}),
     };
   }
 
@@ -1442,13 +1451,12 @@ export async function generateProjectFiles(
     ? path.relative(bgDir, path.join(gnuArmDir, ldFileNameForMakefile)).replace(/\\/g, '/')
     : undefined;
 
-  // .ld → cmsis group (alongside startup .s); retarget/syscalls → 'local' group.
+  // .ld → Linker group; vscode group for stack analysis helper
   {
-    const cmsisKey = isSeries49x ? 'cmsis' : 'CMSIS';
     const gnuRel = (name: string) =>
       path.relative(projectFolder, path.join(gnuArmDir, name)).replace(/\\/g, '/');
     if (ldRelPath) {
-      (metaGroups[cmsisKey] ??= []).push(
+      (metaGroups['Linker'] ??= []).push(
         path.relative(projectFolder, path.resolve(bgDir, ldRelPath)).replace(/\\/g, '/')
       );
     }

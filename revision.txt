@@ -23,6 +23,13 @@ v0.1.8 摘要
   Settings WebView 也新增對應的兩組編輯列表
 - TreeView Group 新增 Add New Files / Add Existing Files 右鍵選單
 - Add Existing Project 命名與提示改善（原為 Add Project）
+- Convert uVision / HT32-IDE / Create Project：目標目錄已存在時，執行前跳出 modal 警告詢問是否覆蓋
+  Create Project 同步修正 printf.c / printf.h 複製改為 skipIfExists，保護 user 已修改的版本
+- Convert uVision：Problems panel 警告（include path 不存在）點擊後跳至 uvprojx 正確行號與欄位
+  根因一：`findToken` 搜尋正斜線路徑，Keil XML 使用反斜線，導致搜尋失敗 fallback 到第 0 行
+  根因二：`applyConvertDiagnostics` range 固定用 `(ln, 0, ln, MAX_SAFE_INTEGER)`，無欄位精度
+  修正：`findToken` 同時嘗試反斜線形式；`ConversionWarning` 新增 col/len 欄位；
+  range 改為 `(line, col, line, col+len)`，找不到時才 fallback MAX_SAFE_INTEGER
 - Multi-Project 升級流程：加入第二個子專案時自動詢問是否升級為 Multi-Project workspace
 - Multi-Project 命名改用 WebviewPanel Dialog（居中 card 樣式，取代畫面頂端 InputBox）
 - Add Existing Project 補上 Multi-Project 升級流程（與 Create Project / Convert 行為一致）

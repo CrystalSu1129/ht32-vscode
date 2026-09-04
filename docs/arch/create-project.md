@@ -66,6 +66,22 @@ HT32: Create Project（ht32.createProject）
 標準系列以 `parseMkFile()` 讀 `{chipSuffix}.mk`，作為 driver 清單、startup 檔名、define、htChipNum 的唯一依據。  
 → **[fwlib-deps.md — .mk 檔的角色](fwlib-deps.md#mk-檔的角色標準系列)**
 
+**.mk 檔不含 group 資訊。** driver 清單以 `$(HT32_LIB_PATH)xxx.c` 條目打平列出，沒有分組標記。  
+因此 TreeView 的 group 分配（User / Config / CMSIS / Library / Utilities）是 `generateProjectFiles()` 裡的 hardcoded 邏輯，以 filename pattern 判斷：
+
+| Group | 分配邏輯 |
+|-------|---------|
+| User | `copiedUserSrcs`（main.c / *_it.c 等），排除 Config set |
+| Config | `ht32_op.c` + `confHFile`（ht32fXxxxx_conf.h）+ `usbdConfHFile` |
+| CMSIS | `systemFileForMeta`（system_ht32*.c）+ startup .s |
+| Library | 其餘 `fwlibSrcs`（driver .c，含 ht32_retarget.c / ht32_serial.c）|
+| Utilities | `fwlibSrcs` 中路徑以 `utilities/` 開頭者 |
+
+已知問題（待修）：
+- startup .s 應放 GNU_ARM group，目前誤放在 CMSIS
+- ht32_retarget.c / ht32_serial.c 應放 Retarget group，目前在 Library
+- ht32_board_config.h 已複製至 src/ 但未加入 Config group
+
 ---
 
 ## startup .s 與 linker.ld patch

@@ -90,7 +90,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const pendingFile = path.join(bgParent(f.uri.fsPath), '.ht32-convert-warnings.json');
     if (fs.existsSync(pendingFile)) {
       try {
-        const warnings: { message: string; file: string }[] = JSON.parse(fs.readFileSync(pendingFile, 'utf8'));
+        const warnings: { message: string; file: string; line?: number; col?: number; len?: number }[] = JSON.parse(fs.readFileSync(pendingFile, 'utf8'));
         applyConvertDiagnostics(warnings);
         fs.unlinkSync(pendingFile);
         vscode.commands.executeCommand('workbench.panel.markers.view.focus');
@@ -758,13 +758,16 @@ function applyPrebuiltDiagnostics(warnings: string[]) {
 }
 
 /** Populate the Problems panel with general conversion warnings (device not found, missing paths, etc.) */
-function applyConvertDiagnostics(entries: { message: string; file: string }[]) {
+function applyConvertDiagnostics(entries: { message: string; file: string; line?: number; col?: number; len?: number }[]) {
   convertDiagCollection.clear();
   if (!entries.length) { return; }
   const diagMap = new Map<string, vscode.Diagnostic[]>();
   for (const e of entries) {
+    const ln  = e.line ?? 0;
+    const col = e.col  ?? 0;
+    const endCol = (e.len !== undefined) ? col + e.len : Number.MAX_SAFE_INTEGER;
     const diag = new vscode.Diagnostic(
-      new vscode.Range(0, 0, 0, 0),
+      new vscode.Range(ln, col, ln, endCol),
       e.message,
       vscode.DiagnosticSeverity.Warning
     );
@@ -1387,6 +1390,15 @@ function buildGenDirName(uvprojxPath: string, _isMulti: boolean = false): string
 function createProjectCommand(ctx: vscode.ExtensionContext, tree: ProjectTreeProvider, treeView: vscode.TreeView<vscode.TreeItem>) {
   const defaultFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   openCreateProjectPanel(ctx, defaultFolder, async (result) => {
+    const cpBgDir = path.join(computeWsOpenRoot(result.projectFolder), result.projectName);
+    if (fs.existsSync(cpBgDir)) {
+      const answer = await vscode.window.showWarningMessage(
+        `"${cpBgDir}" already exists. Existing files will be overwritten. Continue?`,
+        { modal: true },
+        'Continue'
+      );
+      if (answer !== 'Continue') return;
+    }
     await withProgress(`Create Project: ${result.projectName}`, async () => {
       await vscode.commands.executeCommand('workbench.action.closeAllEditors');
       const cpCfg = vscode.workspace.getConfiguration('ht32-project-assistant');
@@ -1452,6 +1464,16 @@ function addNewProjectCommand(ctx: vscode.ExtensionContext, tree: ProjectTreePro
           multiProjSetup = { name: name.trim() || defaultName, existingDir: existing[0] };
         }
       }
+    }
+
+    const addBgDir = path.join(wsOpenRootPre, result.projectName);
+    if (fs.existsSync(addBgDir)) {
+      const answer = await vscode.window.showWarningMessage(
+        `"${addBgDir}" already exists. Existing files will be overwritten. Continue?`,
+        { modal: true },
+        'Continue'
+      );
+      if (answer !== 'Continue') return;
     }
 
     await withProgress(`Add New Project: ${result.projectName}`, async () => {
@@ -1757,11 +1779,22 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     }
   }
 
+  // ── 步驟 1.6：若 HT32_VSCode 已存在，詢問是否覆蓋 ──
+  const ht32vsDirUv = bgParent(wsOpenRoot);
+  if (fs.existsSync(ht32vsDirUv)) {
+    const answer = await vscode.window.showWarningMessage(
+      `"${ht32vsDirUv}" already exists. Existing files will be overwritten. Continue?`,
+      { modal: true },
+      'Continue'
+    );
+    if (answer !== 'Continue') return;
+  }
+
   // ── 步驟 2：執行轉換（帶 progress notification）──
   const uvDefaultWsName = path.basename(picked,
     picked.toLowerCase().endsWith('.uvmpw') ? '.uvmpw' : '.uvprojx');
   const allPrebuiltWarnings: string[] = [];
-  const allConvertWarnings: { message: string; file: string }[] = [];
+  const allConvertWarnings: { message: string; file: string; line?: number; col?: number; len?: number }[] = [];
   await withProgress('Convert uVision (.uvprojx / .uvmpw)', async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     const cfg = vscode.workspace.getConfiguration('ht32');
@@ -1810,7 +1843,7 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       }
       if (result.conversionWarnings?.length) {
         for (const w of result.conversionWarnings) {
-          allConvertWarnings.push({ message: w.message, file: w.file ?? proj.uvprojx });
+          allConvertWarnings.push({ message: w.message, file: w.file ?? proj.uvprojx, line: w.line, col: w.col, len: w.len });
         }
       }
       // 將 uv2make 解析出的值寫入 project.settings.json，與 HT32-IDE 路徑保持一致。
@@ -1972,6 +2005,20 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     } catch { return false; }
   })();
 
+  // 若 HT32_VSCode 已存在，詢問是否覆蓋（以第一個 project 快速推算 wsRoot）
+  try {
+    const r0 = parseHt32IdeProject(projectDirs[0]);
+    const wsRoot0 = computeHt32IdeWsRoot(projectDirs[0], r0.sources);
+    const ht32vsDirIde = bgParent(computeWsOpenRoot(wsRoot0));
+    if (fs.existsSync(ht32vsDirIde)) {
+      const answer = await vscode.window.showWarningMessage(
+        `"${ht32vsDirIde}" already exists. Existing files will be overwritten. Continue?`,
+        { modal: true },
+        'Continue'
+      );
+      if (answer !== 'Continue') return;
+    }
+  } catch { /* 若 parse 失敗就跳過確認，讓後續 convert 正常報錯 */ }
 
   await withProgress('Convert HT32-IDE (.project/.cproject)', async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
@@ -1983,7 +2030,7 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     let activeWsRoot: string | undefined;
     let activeDirName: string | undefined;
     let activeResult:  Ht32IdeConvertProjectResult | undefined;
-    const ideConvertWarnings: { message: string; file: string }[] = [];
+    const ideConvertWarnings: { message: string; file: string; line?: number }[] = [];
     const convResults: { bgDir: string; projectName: string }[] = [];
 
     for (const projectDir of projectDirs) {
