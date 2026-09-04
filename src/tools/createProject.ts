@@ -1492,7 +1492,6 @@ export async function generateProjectFiles(
     ramOrigin,
     ramLength,
     deviceName:   displayName,
-    fwlibSeries:  series,
     outputType,
     fpu:          hasFpuHw ? 'fpv4-sp-d16' : 'none',
     floatAbi:     hasFpuHw ? 'hard' : 'soft',

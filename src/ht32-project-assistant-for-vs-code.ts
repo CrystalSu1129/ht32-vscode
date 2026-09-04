@@ -3486,6 +3486,15 @@ function buildOpenocdServerConfigs(params: {
   return [debugConfig, attachConfig];
 }
 
+const GCC_PROBLEM_MATCHER = {
+  owner: 'gcc',
+  fileLocation: ['autoDetect', '${workspaceFolder}'],
+  pattern: {
+    regexp: '^(.*):(\\d+):(\\d+):\\s+(warning|error|note):\\s+(.*)$',
+    file: 1, line: 2, column: 3, severity: 4, message: 5
+  }
+};
+
 async function generateTasksAndLaunch(
   root: string,
   opts?: { bgDirHint?: string; elfPathHint?: string; deviceNameHint?: string; mcuHint?: string; ramOriginHint?: string; ramLengthHint?: string; spimFlmHint?: string }
@@ -3628,7 +3637,7 @@ async function generateTasksAndLaunch(
         command:        makePathFull ?? 'make',
         args:           ['-j', '-C', bgCwdOf(bg)],
         options:        { cwd: bgCwdOf(bg), ...(envForTasks ? { env: envForTasks } : {}) },
-        problemMatcher: ['$gcc'],
+        problemMatcher: [GCC_PROBLEM_MATCHER],
         presentation:   { reveal: 'always', panel: 'dedicated', clear: true },
       });
       // "Post-Build X" = bat only
@@ -3655,7 +3664,7 @@ async function generateTasksAndLaunch(
         command:        makePathFull ?? 'make',
         args:           ['-j', '-C', bgCwdOf(bg)],
         options:        { cwd: bgCwdOf(bg), ...(envForTasks ? { env: envForTasks } : {}) },
-        problemMatcher: ['$gcc'],
+        problemMatcher: [GCC_PROBLEM_MATCHER],
         group:          { kind: 'build', isDefault: (bg === BG_BASE || bg === BG_BASE_OLD) },
         presentation:   { reveal: 'always', panel: 'dedicated', clear: true },
       });
@@ -3745,7 +3754,6 @@ async function generateTasksAndLaunch(
 
     // 讀各自的 project.settings.json
     const bgSettings = readProjectSettings(path.join(bgParentDir, bg));
-    const bgFwlibSeries = bgSettings.fwlibSeries;
     const bgOutputType  = bgSettings.outputType;
     bgRamOrigin = bgRamOrigin || bgSettings.ramOrigin;
     bgRamLength = bgRamLength || bgSettings.ramLength;
@@ -4200,7 +4208,6 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
         ramOrigin:  bgProjSettings.ramOrigin,
         ramLength:  bgProjSettings.ramLength,
         deviceName: bgProjSettings.deviceName,
-        fwlibSeries: bgProjSettings.fwlibSeries,
       };
       const explicitFloatAbi = bgProjSettings.floatAbi || undefined;
       const explicitFpu      = (bgProjSettings.fpu && bgProjSettings.fpu !== 'none') ? bgProjSettings.fpu : undefined;

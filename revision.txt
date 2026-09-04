@@ -388,6 +388,28 @@ v0.1.8  (from v0.1.7)
   修正：原本直接 append 進現有 .ht32vs，跳過 multi-project 命名流程，
   與 Create Project / Convert uVision 的行為不一致
 
+[49x Convert uVision — .ld 選擇修正]
+- generateLinkerScript 傳入 deviceName 取代 effectiveOpts.mcu（CPU arch）作為 .ld 比對鍵
+  根因：opts.mcu 未從 cfgOpts 傳入，effectiveOpts.mcu fallback 為 tc.mcu = 'cortex-m4'
+  匹配 HT32F49365_FLASH.ld / HT32F49395_FLASH.ld 全部失敗 → fallback ldFiles[0]（字母序第一）
+  = HT32F49365_FLASH.ld，導致 49395 專案使用 49365 的 linker script
+  修正：call site 改傳 deviceName ?? effectiveOpts.mcu，deviceName 來自 extractDeviceNameFromUvproj
+
+[fwlibSeries 死路清除]
+- 移除 BuildMeta.fwlibSeries、ProjectSettings.fwlibSeries 欄位及所有傳遞管道
+  根因：fwlibSeries 曾用於區分 49x vs STD 系列，後改用 is49xDevice() 判斷，
+  但舊欄位仍殘留在 type 定義、read/write 路徑、settingsWebview 參數鏈中，實際上從未被消費
+  影響範圍：BuildMeta / ProjectSettings 介面、readProjectSettings 的 build.meta.json 讀取、
+  openSettingsPanel 的 fwlibSeriesByBg、buildHtml / buildProjectSection 參數、
+  generateTasksAndLaunch 的 bgFwlibSeries、regenAllMakefileFlags 的 buildMeta 組裝、
+  createProject 的 writeProjectSettings
+
+[tasks.json — problemMatcher 改為 inline 定義]
+- 將 '$gcc' 字串參考改為 inline GCC_PROBLEM_MATCHER 物件，不依賴任何 extension 提供 $gcc
+  根因：$gcc 來源不明確（可能由 C/C++ extension 或其他 extension 注入），
+  缺少提供者時出現「Invalid problemMatcher reference: $gcc」錯誤通知
+  inline 格式：owner=gcc、fileLocation=autoDetect、pattern 匹配 file:line:col: severity: msg
+
 v0.1.7  (from v0.1.6)
 --------------------------------------------------------------------------------
 

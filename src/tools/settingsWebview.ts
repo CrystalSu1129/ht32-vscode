@@ -56,7 +56,6 @@ export type ProjectSettings = {
   ramOrigin?:   string;   // e.g. "0x20000000"
   ramLength?:   string;   // e.g. "0x4000"
   deviceName?:  string;   // e.g. "HT32F52352"
-  fwlibSeries?: string;   // e.g. "std-5xxxx" | "49x-493"
   outputType?:  string;   // "app" | "lib"
 };
 
@@ -135,7 +134,6 @@ export function readProjectSettings(bgDir: string): ProjectSettings {
           if (bm.ramOrigin)   s.ramOrigin   = bm.ramOrigin;
           if (bm.ramLength)   s.ramLength   = bm.ramLength;
           if (bm.deviceName)  s.deviceName  = bm.deviceName;
-          if (bm.fwlibSeries) s.fwlibSeries = bm.fwlibSeries;
           if (bm.outputType)  s.outputType  = bm.outputType;
         } catch { /* no build.meta.json */ }
       }
@@ -486,18 +484,16 @@ export function openSettingsPanel(
 
   const machineSettings = readMachineSettings();
   const projectSettingsByBg: Record<string, ProjectSettings> = {};
-  const fwlibSeriesByBg:  Record<string, string> = {};
   const targetNamesByBg:  Record<string, string> = {};
   for (const bg of bgDirs) {
     const s = readProjectSettings(bg.dir);
     projectSettingsByBg[bg.name] = s;
-    if (s.fwlibSeries) fwlibSeriesByBg[bg.name] = s.fwlibSeries;
     if (s.targetName)  targetNamesByBg[bg.name]  = s.targetName;
   }
 
   _openocdAvailable = fs.existsSync(openocdRoot);
   panel.webview.html = buildHtml(
-    machineSettings, bgDirs, projectSettingsByBg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, fwlibSeriesByBg, targetNamesByBg, detectedGccPath
+    machineSettings, bgDirs, projectSettingsByBg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, targetNamesByBg, detectedGccPath
   );
 
   panel.webview.onDidReceiveMessage(async (msg) => {
@@ -605,7 +601,6 @@ function buildHtml(
   autoLoadersByBg: Record<string, AutoLoaderEntry[]>,
   projectNamesByBg: Record<string, string>,
   flmAddrMap: Record<string, { start: string; end: string }>,
-  fwlibSeriesByBg:  Record<string, string> = {},
   targetNamesByBg:  Record<string, string> = {},
   detectedGccPath?: string
 ): string {
@@ -622,14 +617,13 @@ function buildHtml(
         projectSettingsByBg[bg.name] ?? DEFAULT_PROJECT_SETTINGS,
         autoLoadersByBg[bg.name] ?? [],
         availableFlms,
-        fwlibSeriesByBg[bg.name] ?? '',
         targetNamesByBg[bg.name]  ?? '',
         i === 0 ? machine : null,
         i === 0 ? detectedGccPath : undefined
       )).join('\n')
     : `<p class="hint" style="color:var(--vscode-inputValidation-warningForeground);margin:8px 0 16px">
   No converted project found in the workspace. Convert a .uvprojx/.uvmpw first, then reopen this panel.
-</p>` + buildProjectSection('', '', '', DEFAULT_PROJECT_SETTINGS, [], availableFlms, '', '', machine);
+</p>` + buildProjectSection('', '', '', DEFAULT_PROJECT_SETTINGS, [], availableFlms, '', machine);
 
   const saveCancelBar = (isTop: boolean) => `
 <div class="${isTop ? 'sticky-bar' : 'footer-bar'}">
@@ -1264,7 +1258,6 @@ function buildProjectSection(
   s: ProjectSettings,
   autoLoaders: AutoLoaderEntry[],
   availableFlms: string[],
-  fwlibSeries: string = '',
   defaultTargetName: string = '',
   machine: MachineSettings | null = null,
   detectedGccPath?: string

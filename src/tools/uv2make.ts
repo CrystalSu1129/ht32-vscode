@@ -214,7 +214,6 @@ export interface BuildMeta {
   ramOrigin?: string;   // 例如 "0x20000000"
   ramLength?: string;   // 例如 "0x4000"
   deviceName?: string;  // 例如 "HT32F5828"
-  fwlibSeries?: string; // 例如 'std-5xxxx' | '49x-493' — 供 regenerateMakefileFlags 區分系列
 }
 
 /**
@@ -477,7 +476,7 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
   fs.mkdirSync(gnuArmDir, { recursive: true });
 
   // Library projects (.a output) do not need a linker script.
-  const ldFileName = infoRaw.isLibrary ? '' : generateLinkerScript(gnuArmDir, projDir, info, effectiveOpts.mcu, parsedHeapSize, parsedStackSize, info.ramLength, infoRaw.gnuArmTemplate, convWarnings, stackSafeLength, opts.extPath);
+  const ldFileName = infoRaw.isLibrary ? '' : generateLinkerScript(gnuArmDir, projDir, info, deviceName ?? effectiveOpts.mcu, parsedHeapSize, parsedStackSize, info.ramLength, infoRaw.gnuArmTemplate, convWarnings, stackSafeLength, opts.extPath);
   // bgDir-relative path to the .ld file — stored in meta.json and passed to makefileText.
   const ldRelPath = ldFileName ? path.relative(outDirAbs, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/') : '';
 
