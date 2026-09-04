@@ -2,7 +2,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { find49xGccDir, generateStackAnalysis, lookupSramFromSettings, lookupMemoryFromPdsc, detectFpuPresentFromHeader, patchLdStackSections, specsFlags, makeSrcRule, makeSpacedSrcRule, buildMakefileText as buildMakefileTextUnified, writeCCDbFromLists, MIN_HEAP_SIZE, bundledGnuDirFromFwlRoot } from './uv2make';
+import { find49xGccDir, generateStackAnalysis, lookupSramFromSettings, lookupMemoryFromPdsc, detectFpuPresentFromHeader, patchLdStackSections, specsFlags, buildMakefileFromProjectSettings, writeCCDbFromLists, MIN_HEAP_SIZE, bundledGnuDirFromFwlRoot } from './uv2make';
 import { locateArmGcc } from './toolchain';
 import { readProjectSettings, writeProjectSettings } from './settingsWebview';
 
@@ -330,29 +330,19 @@ function generatePutcharC(): string {
 // Makefile generation
 // ─────────────────────────────────────────────────────────
 
-interface MakefileParams {
-  target:       string;
-  fwlibPath:    string;   // absolute, forward slashes
-  bgDir:        string;   // absolute path to Project dir — all paths computed relative to this
-  series:       FwlibSeries;
-  armCore:      string;
-  htChipNum:    string;
-  defines:      string[];
-  startupFile:  string;   // basename e.g. "startup_ht32f5xxxx_gcc_01.s" (unused for lib)
-  incsRel:      string[]; // FWLib-root-relative include paths (without leading /)
-  userSrcs:     string[]; // relative from Project e.g. "../../src/main.c"
-  fwlibSrcs:    string[]; // relative from fwlib root e.g. "library/HT32F5xxxx_Driver/src/ht32f5xxxx_gpio.c"
-  gccPath:      string;   // full path or bare "arm-none-eabi-gcc"
-  outputType:   'app' | 'lib';
-  ldFileName?:  string;   // bgDir-relative path to primary linker script (e.g. 'GNU_ARM/linker.ld')
-  useNano?:     boolean;
-  useNosys?:    boolean;
-  hasFpuHw?:    boolean;  // pre-computed by caller; if undefined, derived from armCore + header scan
-  extraCFlags?: string;
+interface ProjectListsParams {
+  fwlibPath:   string;   // absolute, forward slashes
+  bgDir:       string;   // absolute path to build-gen dir — all paths computed relative to this
+  outputType:  'app' | 'lib';
+  incsRel:     string[]; // FWLib-root-relative include paths (without leading /)
+  defines:     string[];
+  userSrcs:    string[]; // relative from Project e.g. "../../src/main.c"
+  fwlibSrcs:   string[]; // relative from fwlib root
+  startupFile: string;   // basename e.g. "startup_ht32f5xxxx_gcc_01.s" (unused for lib)
 }
 
-function buildMakefileText(p: MakefileParams): { text: string; allSrcs: string[]; incsStr: string; defsStr: string } {
-  const isLib  = p.outputType === 'lib';
+function computeProjectLists(p: ProjectListsParams): { allSrcs: string[]; incsStr: string; defsStr: string } {
+  const isLib = p.outputType === 'lib';
 
   const toBgRel = (absPath: string): string => {
     const rel = path.relative(p.bgDir, absPath).replace(/\\/g, '/');
@@ -365,45 +355,21 @@ function buildMakefileText(p: MakefileParams): { text: string; allSrcs: string[]
     return rel;
   };
 
-  // includes.list / defines.list content
-  const incsArray = [
+  const incsStr = [
     '-Isrc',
     '-IGNU_ARM',
     ...p.incsRel.map(r => `-I"${toBgRel(path.join(p.fwlibPath, r))}"`),
-  ];
-  const incsStr = incsArray.join(' ');
+  ].join(' ');
   const defsStr = p.defines.map(d => `-D${d}`).join(' ');
 
-  const hasFpuHw  = p.hasFpuHw ?? false;
-  const gnuArmRel = 'GNU_ARM';
-
-  const userBgRels  = p.userSrcs.map(s => s.replace(/\\/g, '/'));
-  const fwlibBgRels = p.fwlibSrcs.map(rel => toBgRel(path.join(p.fwlibPath, rel)));
-  const allSrcs     = [
-    ...userBgRels,
-    ...fwlibBgRels,
+  const allSrcs = [
+    ...p.userSrcs.map(s => s.replace(/\\/g, '/')),
+    ...p.fwlibSrcs.map(rel => toBgRel(path.join(p.fwlibPath, rel))),
     ...(!isLib ? [p.startupFile.replace(/\\/g, '/')] : []),
-    ...(!isLib ? [`${gnuArmRel}/ht32_stack_analysis.c`] : []),
+    ...(!isLib ? ['GNU_ARM/ht32_stack_analysis.c'] : []),
   ].filter(s => /\.(c|cpp|s|S)$/i.test(s));
 
-  const ldScripts = p.ldFileName ? [p.ldFileName] : [`${gnuArmRel}/linker.ld`];
-
-  const text = buildMakefileTextUnified({
-    target:        p.target,
-    cc:            p.gccPath,
-    mcu:           p.armCore,
-    srcs:          allSrcs,
-    linkerScripts: isLib ? [] : ldScripts,
-    isLibrary:     isLib,
-    fpu:           hasFpuHw ? 'fpv4-sp-d16' : undefined,
-    floatAbi:      hasFpuHw ? 'hard' : 'soft',
-    useNano:       p.useNano,
-    useNosys:      p.useNosys,
-    extraCFlags:   p.extraCFlags,
-    // htChipNum 已改由 defines.list 傳遞（USE_HT32_CHIP=X 在 defines[]），與 convert 路徑一致
-  });
-
-  return { text, allSrcs, incsStr, defsStr };
+  return { allSrcs, incsStr, defsStr };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1499,27 +1465,54 @@ export async function generateProjectFiles(
     if (fpuPresent === false) { hasFpuHw = false; }
   }
 
-  const { text: makefileText, allSrcs, incsStr, defsStr } = buildMakefileText({
-    target:      projectName,
+  // bgDir-relative include paths for project.settings.json — used by regenerateMakefileFlags()
+  // to write includes.list.  Relative paths allow FWLib to be moved as long as the
+  // relative offset between projectFolder and fwlibPath stays the same.
+  // path.relative() falls back to absolute when src and dest are on different drives.
+  const absIncludePaths = [
+    'src',
+    'GNU_ARM',
+    ...incsRel.map(r => path.relative(bgDir, path.join(fwlibPath, r)).replace(/\\/g, '/')),
+  ];
+  const _existingSettings = readProjectSettings(bgDir);
+  const effectiveExtraCFlags = _existingSettings.extraCFlags || '-std=gnu11';
+  writeProjectSettings(bgDir, {
+    ..._existingSettings,
+    extraCFlags:  effectiveExtraCFlags,
+    mcu:          armCore,
+    targetName:   projectName,
+    ramOrigin,
+    ramLength,
+    deviceName:   displayName,
+    fwlibSeries:  series,
+    outputType,
+    fpu:          hasFpuHw ? 'fpv4-sp-d16' : 'none',
+    floatAbi:     hasFpuHw ? 'hard' : 'soft',
+    useNano:      result.useNano  ?? _existingSettings.useNano,
+    useNosys:     result.useNosys ?? _existingSettings.useNosys,
+    includePaths: absIncludePaths,
+    ...(defines?.length ? { cDefs: defines } : {}),
+    ...(asmDefines?.length ? { aDefs: asmDefines } : {}),
+  });
+
+  const { allSrcs, incsStr, defsStr } = computeProjectLists({
     fwlibPath:   fwlib,
     bgDir,
-    series,
-    armCore,
-    htChipNum,
-    defines,
-    startupFile: startupFileForMakefile,
+    outputType,
     incsRel,
+    defines,
     userSrcs,
     fwlibSrcs,
-    gccPath:     gccResolved,
-    outputType,
-    ldFileName:  ldRelPath ?? undefined,
-    useNano:     result.useNano,
-    useNosys:    result.useNosys,
-    hasFpuHw,
-    extraCFlags: '-std=gnu11',
+    startupFile: startupFileForMakefile,
   });
-  fs.writeFileSync(path.join(bgDir, 'Makefile'), makefileText);
+  const isLib = outputType === 'lib';
+  fs.writeFileSync(path.join(bgDir, 'Makefile'), buildMakefileFromProjectSettings(readProjectSettings(bgDir), {
+    cc:            gccResolved,
+    srcs:          allSrcs,
+    linkerScripts: isLib ? [] : [ldRelPath ?? 'GNU_ARM/linker.ld'],
+    isLibrary:     isLib,
+    comment:       'Created by HT32 VS Code Extension.',
+  }));
   fs.writeFileSync(path.join(bgDir, 'sources.list'),  allSrcs.join('\n'));
   fs.writeFileSync(path.join(bgDir, 'includes.list'), incsStr);
   fs.writeFileSync(path.join(bgDir, 'defines.list'),  defsStr);
@@ -1536,30 +1529,6 @@ export async function generateProjectFiles(
   // project.meta.json — paths relative to workspace root (or absolute for FWLib)
   const meta = { projectName, groups: metaGroups, ...(ldRelPath ? { linkerScripts: [ldRelPath] } : {}), ...(outputType === 'lib' ? { isLibrary: true } : {}) };
   fs.writeFileSync(path.join(bgDir, 'project.meta.json'), JSON.stringify(meta, null, 2));
-  // bgDir-relative include paths for project.settings.json — used by regenerateMakefileFlags()
-  // to write includes.list.  Relative paths allow FWLib to be moved as long as the
-  // relative offset between projectFolder and fwlibPath stays the same.
-  // path.relative() falls back to absolute when src and dest are on different drives.
-  const absIncludePaths = [
-    'src',
-    'GNU_ARM',
-    ...incsRel.map(r => path.relative(bgDir, path.join(fwlibPath, r)).replace(/\\/g, '/')),
-  ];
-  writeProjectSettings(bgDir, {
-    ...readProjectSettings(bgDir),
-    mcu:          armCore,
-    targetName:   projectName,
-    ramOrigin,
-    ramLength,
-    deviceName:   displayName,
-    fwlibSeries:  series,
-    outputType,
-    fpu:          hasFpuHw ? 'fpv4-sp-d16' : 'none',
-    floatAbi:     hasFpuHw ? 'hard' : 'soft',
-    includePaths: absIncludePaths,
-    ...(defines?.length ? { cDefs: defines } : {}),
-    ...(asmDefines?.length ? { aDefs: asmDefines } : {}),
-  });
 
   // elfPath is relative to HT32_VSCode/ (VS Code workspace root)
   const elfPath = outputType === 'lib'

@@ -103,3 +103,19 @@ HT32: Create Project（ht32.createProject）
 
 `detectFpuPresentFromHeader()` 掃 device header 判斷是否有硬體 FPU；結果影響 Makefile `-mfpu` / `-mfloat-abi`、compile_commands.json、project.settings.json 中的 `fpu` 欄位。  
 → **[fpu_present.md](fpu_present.md)**
+
+---
+
+## 產出順序與 settings source of truth
+
+`generateProjectFiles()` 內部固定順序：
+
+1. 計算 FPU / MCU / include / define 等所有參數
+2. **`writeProjectSettings()`** — 寫入 `project.settings.json`（含 `extraCFlags: existing || '-std=gnu11'`）
+3. **`computeProjectLists()`** — 從 FWLib 路徑計算 `allSrcs` / `incsStr` / `defsStr`
+4. **`buildMakefileFromProjectSettings(readProjectSettings(bgDir), { srcs, linkerScripts, ... })`** — 從已寫入的 settings 生成 Makefile
+5. 寫 `sources.list` / `includes.list` / `defines.list` / `adefines.list`
+6. `writeCCDbFromLists()` → `compile_commands.json`
+7. `project.meta.json`
+
+Makefile 完全反映 `project.settings.json`，與 Convert uVision 路徑（`buildMakefileFromProjectSettings`）行為一致。

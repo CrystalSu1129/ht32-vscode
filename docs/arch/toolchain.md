@@ -21,26 +21,29 @@ const { makePathFull, makeExe, gccPath, pyocdPath } =
 
 ## arm-none-eabi-gcc 搜尋順序
 
+Settings key：`ht32.tools.gccPath`（存在 `.vscode/settings.json`，非 VS Code User Settings）
+
 | 優先順序 | 路徑 / 方式 |
 |---|---|
-| 1 | VS Code 設定 `ht32.gccPath` |
+| 1 | `.vscode/settings.json` → `ht32.tools.gccPath`（需通過 `verifyExe` 確認是 arm-none-eabi-gcc） |
 | 2 | `where arm-none-eabi-gcc`（Windows）/ `which`（Unix）→ 取第一行絕對路徑 |
-| 3 | HT32-IDE xPack：`C:\Program Files (x86)\Holtek HT32 Series\HT32-IDE\xPack\arm-gnu-toolchain*\bin\arm-none-eabi-gcc.exe` |
-| 4 | HT32-IDE xPack：`C:\Program Files\Holtek HT32 Series\HT32-IDE\xPack\arm-gnu-toolchain*\bin\arm-none-eabi-gcc.exe` |
-| 5 | winget Arm GNU Toolchain：`C:\Program Files\Arm GNU Toolchain\*\bin\arm-none-eabi-gcc.exe` |
-| 6 | Unix 固定路徑：`/usr/bin`、`/usr/local/bin`、`/opt/arm-none-eabi/bin` |
-| 找到後 | 路徑 cache 到 `ht32.gccPath`（只在非 user-settings 來源時才寫入） |
-| 找不到 | `resolveToolchain` 顯示 warning；`initProjectsFromMeta` 用裸名稱 `arm-none-eabi-gcc` fallback |
+| 3 | HT32-IDE xPack（Windows）：掃描 `C:\Program Files (x86)\Holtek HT32 Series\HT32-IDE\xPack\` 和 `C:\Program Files\Holtek...\xPack\`，找 `arm-gnu-toolchain*` 子目錄，**semver 排序取最新版** |
+| 4 | Arm 官方安裝程式（Windows）：`findArmGccShallow()` 掃描 4 個根目錄（`C:\Program Files\Arm`、`C:\Program Files (x86)\Arm`、`C:\Program Files\Arm GNU Toolchain`、`C:\Program Files (x86)\Arm GNU Toolchain`），深度 3，**版本號排序取最新** |
+| 5 | Unix 固定路徑：`/usr/bin/arm-none-eabi-gcc`、`/usr/local/bin/arm-none-eabi-gcc`、`/opt/arm-none-eabi/bin/arm-none-eabi-gcc` |
+| 找到後 | in-session memory cache（`_gccPathCache`）；`cacheGccPathToSettings()` 另外把路徑寫入 `.vscode/settings.json` |
+| 找不到 | `resolveToolchain` 顯示 warning 並提供 winget 安裝 `Arm.GnuArmEmbeddedToolchain`；`initProjectsFromMeta` 用裸名稱 `arm-none-eabi-gcc` fallback |
 
 ## GNU make 搜尋順序
 
+Settings key：`ht32.tools.makePath`（存在 `.vscode/settings.json`）
+
 | 優先順序 | 路徑 / 方式 |
 |---|---|
-| 1 | VS Code 設定 `ht32.makePath` |
-| 2 | bundled make：`{extensionPath}/bin/win32-x64/make.exe` |
-| 3 | winget LLVM-MinGW：`%LOCALAPPDATA%\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW*\*\bin\make.exe` |
-| 4 | Unix：`/usr/bin/make`、`/bin/make`、`/usr/local/bin/make`、`which make` |
-| 找不到 | `resolveToolchain` 顯示 warning；tasks.json 用裸名稱 `make` fallback；`makefile.makePath` 不寫入 |
+| 1 | `.vscode/settings.json` → `ht32.tools.makePath` |
+| 2 | bundled make（Windows）：`{extensionPath}/bin/win32-x64/make.exe` |
+| 3 | 已安裝的 LLVM-MinGW（Windows winget）：`%LOCALAPPDATA%\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW*\*\bin\make.exe` |
+| 4 | Unix 固定路徑：`/usr/bin/make`、`/bin/make`、`/usr/local/bin/make`、`which make` |
+| 找不到 | `resolveToolchain` 顯示 warning 並提供 winget 安裝 `MartinStorsjo.LLVM-MinGW.UCRT`；tasks.json 用裸名稱 `make` fallback；`makefile.makePath` 不寫入 |
 
 ## pyOCD 搜尋順序
 
@@ -69,6 +72,46 @@ gcc / make 缺失 warning 在以下兩個時間點各觸發一次（場景不重
 - make：若為 bundled，以 `${config:ht32.internal.extensionRoot}/bin/win32-x64` 表示（升版後不需重新 generate）
 - gcc：直接用絕對路徑的 `dirname`
 - 若工具在系統 PATH（`where` 找到），tasks 直接繼承 `${env:PATH}`，不額外插入
+
+## Settings Webview — GCC Path 欄位 placeholder
+
+Settings Webview 的「GCC Path」輸入框以 `placeholder` 顯示 `locateArmGcc()` 自動偵測到的路徑，
+而不是把偵測結果填入 `value`。設計意圖：
+
+- **欄位為空** = 使用自動偵測（每次 build 時 `locateArmGcc()` 動態查）
+- **欄位有值** = 固定使用使用者明確指定的路徑（存入 User Settings `ht32.gccPath`）
+- **placeholder 顯示偵測路徑** = 讓使用者知道「現在自動偵測到這個」，但不強迫存入設定
+
+### 資料流
+
+```
+openSettingsPanel()
+  └─ await locateArmGcc()               ← 呼叫時機：Settings 面板開啟時
+       └─ _locateArmGccInner()          ← 依搜尋順序找第一個可用的
+  └─ detectedGccPath 傳入 buildHtml()
+       └─ HTML: placeholder="${detectedGccPath ?? 'Leave empty to auto-detect'}"
+```
+
+`locateArmGcc()` 有 module-level cache（`_gccPathCache`），同一 VS Code session 只搜尋一次。
+
+### 存檔行為（Settings Webview save）
+
+使用者按 Save 時，`gccPath` 欄位的值（可能為空字串）寫入 User Settings（Global scope）：
+
+```typescript
+// settingsWebview.ts: writeMachineSettings()
+await cfg.update('gccPath', s.gccPath || undefined, ConfigurationTarget.Global);
+```
+
+- 空字串 → `undefined` → 從 User Settings 刪除此 key → 回到自動偵測模式
+- 有值 → 寫入 User Settings `ht32.gccPath`（Global scope）→ `locateArmGcc()` step 1 讀的是 `.vscode/settings.json` 的 `ht32.tools.gccPath`，兩個 key 不同，因此 Settings Webview 存的值**不會**直接命中 step 1，但 `cacheGccPathToSettings()` 在 convert 後會同步寫入 `ht32.tools.gccPath`
+
+### 注意：兩個 GCC Path 設定的差異
+
+| Key | 位置 | 寫入時機 | 讀取時機 |
+|-----|------|---------|---------|
+| `ht32.tools.gccPath` | `.vscode/settings.json`（workspace-local） | `cacheGccPathToSettings()` — convert / generateTasksAndLaunch 後 | `locateArmGcc()` step 1 |
+| `ht32.gccPath` | VS Code User Settings（Global） | Settings Webview 的 GCC Path 欄位存檔 | 未直接參與搜尋流程（歷史遺留欄位） |
 
 ## makefile.makePath 寫入規則
 

@@ -13,8 +13,9 @@ interface MemRegion {
   length:       number;
   hasCode?:     boolean;   // true if exec region contains RESET (vector table) → main code flash
   hasData?:     boolean;   // true if exec region contains +RW or +ZI → main data RAM
-  binarySects?: string[];  // section names extracted from "name.o (SECT)" patterns (binary embed regions)
-  bareObjRefs?: string[];  // bare .o filenames (no section specifier) in dedicated Flash rx region → auto-generated SECTIONS entry
+  binarySects?:   string[];      // section names extracted from "name.o (SECT)" patterns (binary embed regions)
+  bareObjRefs?:   string[];      // bare .o filenames (no section specifier) in dedicated Flash rx region → auto-generated SECTIONS entry
+  objPlacements?: ObjPlacement[]; // "name.o(+XO/+RO/+RW/+ZI)" → pinned-object SECTIONS entries
 }
 
 interface CustomSection {
@@ -22,6 +23,13 @@ interface CustomSection {
   ldMem:    string;   // MEMORY region name
   isNoLoad: boolean;
   isRam:    boolean;  // true = RAM-type region (no init copy needed)
+}
+
+interface ObjPlacement {
+  glob:    string;    // "calculate.o" | "*.o"
+  attr:    string;    // "+XO" | "+RO" | "+RW" | "+ZI"
+  isFirst: boolean;
+  sects:   string[];  // resolved GNU section patterns
 }
 
 export interface Scatter2LdResult {
@@ -172,6 +180,37 @@ function extractObjSectionNames(body: string): string[] {
   return results;
 }
 
+/** Map Keil attribute selector to GNU LD section patterns. */
+function attrToSections(attr: string): string[] {
+  switch (attr.toUpperCase()) {
+    case '+XO': return ['.text', '.text*'];
+    case '+RO': return ['.text', '.text*', '.rodata', '.rodata*'];
+    case '+RW': return ['.data', '.data*'];
+    case '+ZI': return ['.bss', '.bss*'];
+    default:    return [];
+  }
+}
+
+/**
+ * Extract "name.o(+ATTR)" placements from exec region body.
+ * e.g. calculate.o(+XO)  →  { glob:'calculate.o', attr:'+XO', sects:['.text','.text*'] }
+ *      *.o(+RO, +FIRST)   →  { glob:'*.o', attr:'+RO', isFirst:true, ... }
+ */
+function extractObjAttrPlacements(body: string): ObjPlacement[] {
+  const results: ObjPlacement[] = [];
+  // Matches: "name.o(+ATTR)" or "name.o(+ATTR, +FIRST)" — name may be *.o or path.o
+  const re = /(\*|[\w.]+\.o)\s*\(\s*(\+(?:XO|RO|RW|ZI))(?:[^)]*\+FIRST)?[^)]*\)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    const glob    = m[1];
+    const attr    = m[2].toUpperCase();
+    const isFirst = /\+FIRST/i.test(m[0]);
+    const sects   = attrToSections(attr);
+    results.push({ glob, attr, isFirst, sects });
+  }
+  return results;
+}
+
 /** True if body contains standard Keil placement patterns (no custom section conversion needed). */
 function isStandardRegion(body: string): boolean {
   // +RO/+RW/+ZI/+XO  — standard Keil attribute selectors
@@ -252,10 +291,30 @@ export function scatter2ld(
       // Extract custom named sections and bare .o refs before push so they can be stored in MemRegion.
       const namedSects = extractNamedSections(er.body);
 
+      // Extract "name.o(+XO/+RO/+RW/+ZI)" pinned-object placements.
+      // Only relevant for dedicated non-code/non-data regions (e.g. Partial Lock flash sections).
+      const objPlacements: ObjPlacement[] = (!hasCode && !hasData)
+        ? extractObjAttrPlacements(er.body)
+        : [];
+
+      for (const p of objPlacements) {
+        if (attrs === 'xrw' && (p.attr === '+RW' || p.attr === '+ZI')) {
+          warnings.push(
+            `Region "${er.name}" at ${hex(er.base)}: "${p.glob}(${p.attr})" in RAM region — ` +
+            `execute-from-RAM requires AT> and startup copy routine; auto-conversion not supported.`
+          );
+        } else {
+          warnings.push(
+            `Region "${er.name}" at ${hex(er.base)}: "${p.glob}(${p.attr})" → pinned to ${ldName} ` +
+            `as [${p.sects.join(' ')}]. Verify section names match actual .c/.s content.`
+          );
+        }
+      }
+
       // Bare .o at fixed Flash address (rx, no other patterns): auto-generate SECTIONS entry.
       // xrw (RAM execute-from-RAM) still needs AT> + startup copy — emit WARNING instead.
       const bareObjRefs: string[] = [];
-      if (!hasCode && !hasData && binarySects.length === 0 && namedSects.length === 0) {
+      if (!hasCode && !hasData && binarySects.length === 0 && namedSects.length === 0 && objPlacements.length === 0) {
         const bareObjs = [...er.body.matchAll(/\b\w[\w.]*\.o\b(?!\s*\()/g)].map(m => m[0]);
         if (bareObjs.length > 0) {
           if (attrs === 'rx') {
@@ -265,7 +324,6 @@ export function scatter2ld(
               `auto-placed with .rodata/.data sections. Verify section names match actual .c content.`
             );
           } else {
-            // xrw execute-from-RAM: cannot auto-convert (needs AT> load address + startup copy)
             for (const obj of bareObjs) {
               warnings.push(
                 `Region "${er.name}" at ${hex(er.base)}: object file "${obj}" in RAM region ` +
@@ -276,7 +334,7 @@ export function scatter2ld(
         }
       }
 
-      memRegions.push({ ldName, attrs, origin: er.base, length, hasCode, hasData, binarySects, bareObjRefs });
+      memRegions.push({ ldName, attrs, origin: er.base, length, hasCode, hasData, binarySects, bareObjRefs, objPlacements });
 
       for (const sn of namedSects) {
         customSections.push({
@@ -289,8 +347,19 @@ export function scatter2ld(
         });
       }
 
-      if (!isStandardRegion(er.body) && namedSects.length === 0 && bareObjRefs.length === 0) {
-        warnings.push(`ER region "${er.name}" at ${hex(er.base)}: no recognized patterns found, skipped.`);
+      // Report any body content that doesn't match any recognized pattern.
+      const hasAnyRecognized = hasCode || hasData ||
+        binarySects.length > 0 || namedSects.length > 0 ||
+        bareObjRefs.length > 0 || objPlacements.length > 0;
+
+      if (!hasAnyRecognized) {
+        const trimmed = er.body.trim().replace(/\s+/g, ' ');
+        if (trimmed.length > 0) {
+          warnings.push(
+            `Region "${er.name}" at ${hex(er.base)}: unrecognized content — no SECTIONS entry generated. ` +
+            `Body: "${trimmed.slice(0, 120)}${trimmed.length > 120 ? '…' : ''}"`
+          );
+        }
       }
     }
   }
@@ -374,6 +443,24 @@ export function scatter2ld(
   // rx regions with bare .o file references: auto-generated fixed-address Flash sections.
   const bareObjRxRegions  = allRxRegions.filter(r => !r.hasCode && r.bareObjRefs && r.bareObjRefs.length > 0);
 
+  // Regions with "name.o(+XO/+RO)" pinned-object placements (e.g. Partial Lock flash sections).
+  const objPinnedRegions  = memRegions.filter(r => !r.hasCode && !r.hasData && r.objPlacements && r.objPlacements.length > 0);
+
+  function objPinnedSectBlock(r: MemRegion): string {
+    const sectName = r.ldName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const keilDesc = r.objPlacements!.map(p => `${p.glob}(${p.attr})`).join(', ');
+    const lines = r.objPlacements!.map(p => {
+      const objFilter = p.glob === '*.o' ? '*' : `*${p.glob}`;
+      const sectList  = p.sects.join(' ');
+      const keepLine  = `    KEEP(${objFilter}(${sectList}))`;
+      return p.isFirst ? `    /* +FIRST */\n${keepLine}` : keepLine;
+    }).join('\n');
+    return (
+      `  /* Keil: ${keilDesc} — pinned to ${r.ldName} at ${hex(r.origin)} */\n` +
+      `  .${sectName} :\n  {\n    . = ALIGN(4);\n${lines}\n    . = ALIGN(4);\n  } >${r.ldName}`
+    );
+  }
+
   // ── Assemble the full .ld ──
   const ld = `/* Auto-generated by scatter2ld from ${deviceName} scatter file */
 /* Source: Keil scatter → GNU LD conversion */
@@ -402,7 +489,9 @@ ${bareObjRxRegions.map(r => {
   const sectName = r.ldName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
   const objLines = r.bareObjRefs!.map(o => `    KEEP(*${o}(.rodata .rodata* .data .data*))`).join('\n');
   return `  /* Bare .o at fixed Flash address — auto-generated; verify section names match .c content */\n  .${sectName} :\n  {\n${objLines}\n  } >${r.ldName}\n`;
-}).join('\n')}${hasResetRegion ? `  .isr_vector :
+}).join('\n')}
+${objPinnedRegions.map(objPinnedSectBlock).join('\n\n')}
+${hasResetRegion ? `  .isr_vector :
   {
     . = ALIGN(4);
     KEEP(*(.isr_vector))

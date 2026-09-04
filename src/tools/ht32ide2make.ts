@@ -578,7 +578,7 @@ export function resolveHt32IdePostBuildPath(cmd: string, wsRoot: string): string
 // Makefile generation
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: string): string {
+export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: string, extraCFlags?: string): string {
   // ── Cross-drive check ──────────────────────────────────────────────────────
   const bgDrive = path.parse(bgDir).root.toUpperCase();
   for (const s of result.sources) {
@@ -634,6 +634,7 @@ export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: 
     scanfFloat:        result.scanfFloat,
     extraLibPaths:     (result.extraLibPaths ?? []).map(toBgRel),
     extraLibNames:     result.extraLibNames,
+    extraCFlags:       extraCFlags || '-std=gnu11',
     comment:           'Converted from HT32-IDE.',
   });
 }
@@ -1044,40 +1045,6 @@ export function convertHt32IdeProject(
     patchedResult.sources.push({ group: 'vscode', absPath: path.join(gnuArmDir, 'ht32_stack_analysis.c').replace(/\\/g, '/') });
   }
 
-  fs.writeFileSync(path.join(bgDir, 'Makefile'), generateMakefile(patchedResult, bgDir, gccPath));
-  writeHt32IdeLists(bgDir, patchedResult);
-
-  writeCCDbFromLists(bgDir, {
-    armCore:     patchedResult.armCore,
-    fpu:         patchedResult.fpuName || undefined,
-    floatAbi:    patchedResult.fpuName ? (patchedResult.hardFloat ? 'hard' : 'softfp') : 'soft',
-    optimization: patchedResult.optimization || 'Os',
-  });
-
-  const baseMeta = buildProjectMeta(patchedResult, wsRoot);
-  const allLdRelPaths: string[] = [];
-  if (!result.isLibrary && ldFileName) {
-    const ldStartupGroup = Object.keys(baseMeta.groups).find(g =>
-      baseMeta.groups[g].some((f: string) => /\.s$/i.test(f))
-    ) ?? 'cmsis';
-    allLdRelPaths.push(path.relative(bgDir, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/'));
-    (baseMeta.groups[ldStartupGroup] ??= []).push(
-      path.relative(wsRoot, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/')
-    );
-    for (const eld of result.extraLinkerScripts ?? []) {
-      allLdRelPaths.push(path.relative(bgDir, path.join(gnuArmDir, path.basename(eld))).replace(/\\/g, '/'));
-      (baseMeta.groups[ldStartupGroup] ??= []).push(
-        path.relative(wsRoot, path.join(gnuArmDir, path.basename(eld))).replace(/\\/g, '/')
-      );
-    }
-  }
-  const meta = {
-    ...baseMeta,
-    ...(allLdRelPaths.length ? { linkerScripts: allLdRelPaths } : {}),
-    ...(result.isLibrary ? { isLibrary: true } : {}),
-  };
-  fs.writeFileSync(path.join(bgDir, 'project.meta.json'), JSON.stringify(meta, null, 2));
-
   const isM4         = result.armCore === 'cortex-m4';
   // M4 without explicit FPU from .cproject: check __FPU_PRESENT before assuming fpv4-sp-d16.
   // HT32F490x1 is a Cortex-M4 with __FPU_PRESENT=0 — the fallback must not force FPU on it.
@@ -1092,8 +1059,11 @@ export function convertHt32IdeProject(
     ? resolveHt32IdePostBuildPath(result.postBuildCmd, bgParentIde(wsRoot))
     : undefined;
   const isFirstConvert = !fs.existsSync(path.join(bgDir, 'project.settings.json'));
+  const _existingSettings = readProjectSettings(bgDir);
+  const effectiveExtraCFlags = _existingSettings.extraCFlags || '-std=gnu11';
   writeProjectSettings(bgDir, {
-    ...readProjectSettings(bgDir),
+    ..._existingSettings,
+    extraCFlags: effectiveExtraCFlags,
     ...(isFirstConvert ? { openocdDebugLevel: 1 } : {}),
     mcu:               result.armCore,
     targetName:        result.outputName,
@@ -1125,6 +1095,40 @@ export function convertHt32IdeProject(
     })(),
     ...(idePostBuildCmd ? { postBuildCmd: idePostBuildCmd } : {}),
   });
+
+  fs.writeFileSync(path.join(bgDir, 'Makefile'), generateMakefile(patchedResult, bgDir, gccPath, effectiveExtraCFlags));
+  writeHt32IdeLists(bgDir, patchedResult);
+
+  writeCCDbFromLists(bgDir, {
+    armCore:      patchedResult.armCore,
+    fpu:          fpuFinal || undefined,
+    floatAbi:     floatAbiFinal,
+    optimization: patchedResult.optimization || 'Os',
+  });
+
+  const baseMeta = buildProjectMeta(patchedResult, wsRoot);
+  const allLdRelPaths: string[] = [];
+  if (!result.isLibrary && ldFileName) {
+    const ldStartupGroup = Object.keys(baseMeta.groups).find(g =>
+      baseMeta.groups[g].some((f: string) => /\.s$/i.test(f))
+    ) ?? 'cmsis';
+    allLdRelPaths.push(path.relative(bgDir, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/'));
+    (baseMeta.groups[ldStartupGroup] ??= []).push(
+      path.relative(wsRoot, path.join(gnuArmDir, ldFileName)).replace(/\\/g, '/')
+    );
+    for (const eld of result.extraLinkerScripts ?? []) {
+      allLdRelPaths.push(path.relative(bgDir, path.join(gnuArmDir, path.basename(eld))).replace(/\\/g, '/'));
+      (baseMeta.groups[ldStartupGroup] ??= []).push(
+        path.relative(wsRoot, path.join(gnuArmDir, path.basename(eld))).replace(/\\/g, '/')
+      );
+    }
+  }
+  const meta = {
+    ...baseMeta,
+    ...(allLdRelPaths.length ? { linkerScripts: allLdRelPaths } : {}),
+    ...(result.isLibrary ? { isLibrary: true } : {}),
+  };
+  fs.writeFileSync(path.join(bgDir, 'project.meta.json'), JSON.stringify(meta, null, 2));
 
   return {
     wsRoot,

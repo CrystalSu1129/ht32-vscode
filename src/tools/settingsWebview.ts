@@ -108,6 +108,8 @@ function normalizeDebugInterface(val: string): string {
 /** Read per-project settings from build-gen-{name}/project.settings.json.
  *  Falls back to VS Code workspace settings if the file doesn't exist (migration / first run).
  *  For backward compat, merges missing meta fields from build.meta.json if present. */
+export { DEFAULT_PROJECT_SETTINGS };
+
 export function readProjectSettings(bgDir: string): ProjectSettings {
   const settingsPath = path.join(bgDir, 'project.settings.json');
   if (fs.existsSync(settingsPath)) {

@@ -6,6 +6,10 @@ v0.1.8 摘要
 --------------------------------------------------------------------------------
 
 新功能
+- scatter2ld：支援 `name.o(+XO/+RO/+RW/+ZI)` 物件固定位址映射（Partial Lock 專案用）
+  轉換後自動產生對應 SECTIONS 約束，並以警告通知 user 已轉換的內容
+  不認識的 body 內容改為顯示警告（含原始 body 節錄），不再靜默略過
+- Settings Webview — GCC Path 欄位改為 placeholder 顯示自動偵測路徑，不強制填入
 - 每個檔案獨立設定（Per-file Settings）：右鍵 TreeView 檔案節點 → File Settings...
   支援三項：Exclude from build（不編譯）、Execute-only（-mpure-code）、ROM Region 指派
   Convert uVision 時自動讀取 Keil 原有設定（IncludeInBuild / useXO / RVCTCodeConst）
@@ -26,6 +30,11 @@ v0.1.8 摘要
 - 檔案產生 log：轉換時所有寫出的檔案顯示於 Output Channel
 
 修正
+- Convert uVision / HT32-IDE：Makefile 初始產生時補上 `-std=gnu11`（三條路徑皆修正）
+  根因：effectiveOpts.extraCFlags 未設預設值，初次 Makefile 產生無 -std=gnu11；
+  project.settings.json 寫入時也未帶入，Settings Webview 存檔後才補上導致行為不一致
+  修正：uv2make effectiveOpts / ht32ide2make generateMakefile / 兩路徑 writeProjectSettings
+  皆以 `extraCFlags ?? '-std=gnu11'` 補全，createProject 原本已正確
 - Erase Mode 移除「Do Not Erase」選項：pyocd / OpenOCD GDB server 均不支援略過 erase，
   舊值 'none' 自動 migrate 為 'erase_sector'
 - Toolchain Detection 大幅改寫：移除深度遞迴掃描（原本阻塞 activation）、加入 session cache
@@ -114,12 +123,46 @@ v0.1.8  (from v0.1.7)
   project.settings.json → defines.list → adefines.list → compile_commands.json
 - Define 列表改為 flex-wrap 排版，一列顯示三個（寬度各 1/3），視窗窄時自動換行
 
+[scatter2ld — name.o(+XO/+RO) 物件固定位址映射]
+- 新增 extractObjAttrPlacements()：解析 exec region body 中的 `name.o(+ATTR)` 語法
+  支援 +XO / +RO / +RW / +ZI，`+FIRST` modifier 亦支援
+  +XO → `.text .text*`；+RO → `.text .text* .rodata .rodata*`；
+  +RW → `.data .data*`；+ZI → `.bss .bss*`
+- 新增 objPinnedRegions：偵測到 objPlacements 時自動產生對應 SECTIONS block
+  e.g. `calculate.o(+XO)` in ICODE_EXEC → `.icode_exec : { KEEP(*calculate.o(.text .text*)) } >ICODE_EXEC`
+- 對每個 `name.o(+ATTR)` 轉換均發出警告，提示 user 確認 section 名稱是否吻合
+- +RW / +ZI 在 RAM region 發出「需要 AT> 與 startup copy，不支援自動轉換」警告
+- 改善「不認識的 region body」偵測：移除原本只依賴 isStandardRegion() 的判斷，
+  改為所有已知模式（hasCode / hasData / binarySects / namedSects / bareObjRefs / objPlacements）
+  皆未命中時才警告，並顯示 body 原文（前 120 字元）供 user 自行處理
+- bareObjRefs 判斷條件加入 `objPlacements.length === 0`，避免與 objPlacements 路徑重複
+
+[Convert — -std=gnu11 預設值修正]
+- 修正：三條轉換路徑（Convert uVision / Convert HT32-IDE / Create Project）
+  初次產生 Makefile 時 CFLAGS 未帶 -std=gnu11
+  根因：GCC 15 起預設 C23，`bool` 成為 keyword，與 HT32 FWLib 的 `#define bool _Bool` 衝突
+- uv2make.ts：effectiveOpts 建立時補上 `extraCFlags: opts.extraCFlags ?? '-std=gnu11'`
+  確保初次 Makefile 產生就帶入，不等到 Settings Webview 第一次儲存
+- ht32ide2make.ts：generateMakefile 呼叫 buildMakefileText 時補上 `extraCFlags: '-std=gnu11'`
+- uv2make.ts + ht32ide2make.ts：writeProjectSettings 改先 readProjectSettings 儲存至
+  _existingSettings，寫入時加 `extraCFlags: _existingSettings.extraCFlags ?? '-std=gnu11'`
+  確保首次建立 project.settings.json 時欄位即存在
+- 設計原則：不寫死於 CFLAGS template，user 可在 Settings Webview Extra C Flags 欄位覆蓋
+
+[Toolchain Detection — Settings Webview GCC Path Placeholder]
+- GCC Path 輸入框改以 `placeholder` 顯示 `locateArmGcc()` 偵測到的路徑
+  原本：偵測路徑直接填入 value，無法區分「使用者明確設定」與「自動偵測結果」
+  現在：欄位為空 = 自動偵測；欄位有值 = 使用者固定指定路徑
+- openSettingsPanel 呼叫時執行 await locateArmGcc()，結果以 detectedGccPath 傳入 buildHtml()
+
 [Toolchain Detection]
 - locateArmGcc 移除深度遞迴掃描（原本掃 Program Files 深度 6，導致 activation 阻塞）
 - 改用 where/which 取得完整絕對路徑，不再回傳裸名稱
-- 搜尋順序：user 設定 → where/which → HT32-IDE xPack 固定路徑 → winget 固定路徑
-- 加入 in-session cache，同一視窗只搜尋一次
-- 找到後自動寫入 workspace settings.json，下次啟動直接使用
+- 搜尋順序：ht32.tools.gccPath（.vscode/settings.json）→ where/which →
+  HT32-IDE xPack（semver 排序取最新）→ findArmGccShallow() 4 根目錄深度 3 →
+  Unix 固定路徑；找不到才透過 winget 提供安裝
+- 加入 in-session cache（_gccPathCache），同一視窗只搜尋一次
+- 找到後透過 cacheGccPathToSettings() 寫入 .vscode/settings.json（ht32.tools.gccPath）
 - 修正：專案目錄名稱不是 Project/ 時，開啟專案不觸發工具鏈自動偵測與安裝
 - 新增 resolveToolchain() helper：統一 make / gcc / pyocd 三項工具的解析，單一入口
   修正：initProjectsFromMeta 未優先讀取 user settings 中的 gccPath

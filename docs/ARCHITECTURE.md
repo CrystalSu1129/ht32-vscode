@@ -28,6 +28,12 @@
 | [arch/tasks-json-shell.md](arch/tasks-json-shell.md) | tasks.json shell 類型設計：`type: 'process'` vs `type: 'shell'` + `quoting: 'strong'`；各 task 選擇理由；路徑含特殊字元（`(~!%^)`）的 PowerShell 相容問題 |
 | [arch/file-settings.md](arch/file-settings.md) | Per-file Settings（Exclude / Execute-only / ROM Region）：meta.json 格式、Makefile 效果、patchLinkerScriptRom、Convert uVision vs HT32-IDE 自動讀取差異 |
 | [arch/settings-webview.md](arch/settings-webview.md) | Settings Webview 所有選項的資料流對照表：Compiler 設定 → Makefile / compile_commands.json；Debugger 設定 → tasks.json / launch.json |
+| [arch/compiler-compat.md](arch/compiler-compat.md) | GCC 版本相容性設計：`--no-warn-rwx-segments` Makefile 動態偵測（`LD_NO_WARN`）、`-std=gnu11` 預設 flag 與 GCC 15 C23 bool 衝突處理 |
+| [arch/rtos.md](arch/rtos.md) | FreeRTOS 自動轉換：port.c / portmacro.h include path RVDS→GCC 替換邏輯、手動處理情境 |
+| [arch/toolchain.md](arch/toolchain.md) | Toolchain 搜尋策略：GCC / Make 搜尋順序、`findArmGccShallow()` shallow scan、`locateMake()` 設計、winget 安裝流程、tasks.json PATH 組成規則 |
+| [arch/postbuild.md](arch/postbuild.md) | Post-Build 指令轉換：Keil「After Make」→ VS Code task `translateKeilPostBuildCmd()`、.bat 自動加 `cmd /c`、Compile / Post-Build / Build compound 結構 |
+| [arch/PartialLock.md](arch/PartialLock.md) | FLASH Partial Lock — 雙專案 symdefs → .ld 轉換流程（IAP + AP 共用 Flash 分區設計） |
+| [arch/test-scripts.md](arch/test-scripts.md) | 測試腳本說明：`test-mcu.js`（MCU 靜態覆蓋率）、`test-create-project.js`（四層驗證）、`test-compile.js`（轉換+編譯）及其他輔助腳本 |
 
 ---
 
@@ -48,20 +54,25 @@ ht32.vscode.solution/
 ├── out/                             ← 編譯輸出（tsc → CommonJS，不進版控）
 │
 ├── templates/
-│   └── GNU_ARM/                     ← 所有 core 共用的 bundled 資源（syscalls.c、ht32_stack_analysis.c）
+│   ├── GNU_ARM/                     ← core 共用（syscalls.c、ht32_stack_analysis.c、ht32_op.c、ht32_op2.c、linker.ld）
+│   ├── F1xxxx/                      ← HT32F1xxxx（M3）：conf.h、main.c、it.c、system_*_01~03.c、usbdconf.h
+│   │   └── GNU_ARM/                 ← startup_gcc_01/03.s、linker.ld、5 個 .mk（12345/12364/12366/1654/1656）、ht32_op.c
+│   ├── F4xxxx/                      ← HT32F4xxxx（M4/49x）：conf.h、main.c、it.c、system_*_01.c、can_config.h、usbdconf.h
+│   │   └── GNU_ARM/                 ← startup_gcc_01.s、linker.ld、42386.mk、ht32_op.c、ht32_op2.c
+│   ├── F5xxxx/                      ← HT32F5xxxx（M0+）：conf.h、main.c、it.c、system_*_01~19.c、3 個 usbdconf.h
+│   │   └── GNU_ARM/                 ← 16 個 startup_gcc_NN.s（01~17，跳 04）、78 個 .mk、linker.ld、ht32_op.c
+│   └── L5xxxx/                      ← HT32L5xxxx（M0+）：conf.h、main.c、it.c、system_*_01.c、2 個 usbdconf.h
+│       └── GNU_ARM/                 ← startup_gcc_01/02.s、linker.ld、9 個 .mk（3200U/W/X、52241 等）、ht32_op.c
 │
 ├── conf/
 │   └── Settings.ini                 ← HLM WORKAREASIZE 對照表（與 HT32-IDE plugin 相同結構）
 │
-├── dfp/Holtek/HT32_DFP/             ← CMSIS DFP（多版本並存，getAllPdscPaths 掃全部版本）
-│   ├── 1.0.3/                       ← 49x 系列 DFP（HT32F42xxx）
-│   │   ├── Holtek.HT32F423x6_DFP.pdsc
-│   │   ├── SVD/                     ← 49x SVD 檔
-│   │   └── ARM/                     ← FLM Flash Loader、Header、Startup
-│   └── 1.0.76/                      ← 主版本 DFP（標準系列全部 MCU）
-│       ├── Holtek.HT32_DFP.pdsc
+├── dfp/Holtek/HT32_DFP/             ← CMSIS DFP（getAllPdscPaths 掃全部版本，多版本並存時新版優先）
+│   └── 1.0.79/                      ← 目前版本（含標準系列 + 49x 系列全部 MCU）
+│       ├── Holtek.HT32_DFP.pdsc     ← 標準系列 PDSC（FLM 命名、RAM/Flash 資訊、SVD 路徑）
+│       ├── Holtek.HT32F423x6_DFP.pdsc  ← 49x 系列 PDSC
 │       ├── SVD/                     ← ~100 個 HT32 MCU 的 SVD 檔（偵錯用）
-│       └── ARM/                     ← FLM Flash Loader、Header
+│       └── ARM/                     ← FLM Flash Loader、Header、Startup（標準系列 + 49x）
 │
 ├── openocd/                         ← 打包的 OpenOCD（Windows x64）
 │   ├── bin/                         ← openocd.exe + libftdi1/libusb/libhidapi/libjaylink DLLs
@@ -78,8 +89,13 @@ ht32.vscode.solution/
 │   ├── test-mcu.js                  ← MCU 靜態覆蓋率（cfg/HLM/WorkArea 是否齊全）
 │   ├── test-create-project.js       ← Create Project 四層驗證
 │   ├── test-compile.js              ← uVision/HT32-IDE 轉換 + 編譯
-│   ├── clean-prj.js                 ← 清除 FWLib 下所有 .vscode/ 轉換產出
-│   └── test-compile.ini             ← FWLib 路徑清單（test-create-project / test-compile 共用）
+│   ├── batch-convert-htide.js       ← 批次 Convert HT32-IDE（搭配 fwlib-paths.ini）
+│   ├── create-prj.js                ← 批次 Create Project（搭配 fwlib-paths.ini）
+│   ├── clean-prj.js                 ← 清除 FWLib 下所有轉換產出（HT32_VSCode/）
+│   ├── clean-vscode-templates.bat   ← 清除 FWLib template 目錄下的 .vscode/ 殘留
+│   ├── fwlib-paths.ini              ← FWLib 路徑清單（test-create-project / test-compile / batch 共用）
+│   ├── test-compile-report/         ← test-compile.js 的輸出報告目錄
+│   └── test-mcu-report.txt          ← test-mcu.js 的覆蓋率報告
 │
 ├── docs/                            ← 文件
 │   ├── ARCHITECTURE.md              ← 本檔（索引）
@@ -101,12 +117,14 @@ ht32.vscode.solution/
 | 模組 | 職責 |
 |------|------|
 | `ht32-project-assistant-for-vs-code.ts` | Extension 主入口。負責：`activate()` 啟動、註冊所有 Commands（convert / create / build / clean / download / debug / settings）、建立 ProjectTreeView 與 RecentProjectsTreeView、`generateTasksAndLaunch()` 產生 `.vscode/tasks.json` + `launch.json`（含 `bgDirSuffix()` 統一命名、`htBgDir` 欄位標記）、`regenerateMakefileFlags()` 將 Settings Webview 的設定同步回 Makefile、OpenOCD 相關函式（`selectTargetCfg` / `parseMcuCfg` / `selectInternalHlm` / SPIM loader 選擇） |
-| `tools/uv2make.ts` | Keil uVision `.uvprojx` / `.uvmpw` → Makefile 轉換器。解析 XML 取得 sources / includes / C defines（Cads）/ ASM-only defines（Aads）/ 記憶體配置 / scatter file / FPU 設定，呼叫 `scatter2ld` 產生 linker script，輸出 `Makefile` + `sources.list` + `includes.list` + `defines.list` + `adefines.list` + `compile_commands.json` + `project.meta.json`。`regenerateMakefileFlags()` 負責將 Settings Webview 儲存的所有設定重新寫入 Makefile（含 `cDefs`→`defines.list`、`aDefs`→`adefines.list`）。**`writeCCDbFromLists(bgDir, opts)`** 是三條轉換路徑共用的 compile_commands.json 產生器，同時讀 `defines.list` + `adefines.list` 確保 clangd 看到全部 define；接受 `gccFullPath?`，傳入後自動使用完整路徑作為 compiler 並計算 `-isystem` 旗標。**`buildCCDb()`** 每個 entry 永遠插入 `--target=arm-none-eabi`，確保 clangd 以 ARM target 解析型別。**`computeIsystemPaths(gccFull)`** 從 gcc 完整路徑推算 newlib / gcc include 目錄，供 `writeCCDbFromLists` 呼叫。**`enforceMinHeap(heapSize)`** 強制最小 heap 大小（`MIN_HEAP_SIZE = 0x40`），所有路徑共用 |
+| `tools/uv2make.ts` | Keil uVision `.uvprojx` / `.uvmpw` → Makefile 轉換器。解析 XML 取得 sources / includes / C defines（Cads）/ ASM-only defines（Aads）/ 記憶體配置 / scatter file / FPU 設定，呼叫 `scatter2ld` 產生 linker script，輸出 `Makefile` + `sources.list` + `includes.list` + `defines.list` + `adefines.list` + `compile_commands.json` + `project.meta.json`。`regenerateMakefileFlags()` 負責將 Settings Webview 儲存的所有設定重新寫入 Makefile（含 `cDefs`→`defines.list`、`aDefs`→`adefines.list`；接受 `cc?` 參數，傳入後同步更新 CC / AR / OBJCOPY / OBJDUMP / SIZE 五行）；舊版 Makefile 缺少 `LD_NO_WARN` 時自動補入 upgrade patch。Makefile LDFLAGS 以 `$(LD_NO_WARN)` 動態偵測 `--no-warn-rwx-segments` 支援（GCC 10/11 不支援，GCC 12+ 支援）；Windows 用 `findstr`、Unix 用 `grep`，以 `comma := ,` 解決 `$(if)` 不能含逗號的限制。**`writeCCDbFromLists(bgDir, opts)`** 是三條轉換路徑共用的 compile_commands.json 產生器，同時讀 `defines.list` + `adefines.list` 確保 clangd 看到全部 define；接受 `gccFullPath?`，傳入後自動使用完整路徑作為 compiler 並計算 `-isystem` 旗標。**`buildCCDb()`** 每個 entry 永遠插入 `--target=arm-none-eabi`，確保 clangd 以 ARM target 解析型別。**`computeIsystemPaths(gccFull)`** 從 gcc 完整路徑推算 newlib / gcc include 目錄，供 `writeCCDbFromLists` 呼叫。**`enforceMinHeap(heapSize)`** 強制最小 heap 大小（`MIN_HEAP_SIZE = 0x40`），所有路徑共用 |
 | `tools/ht32ide2make.ts` | HT32-IDE `.project` / `.cproject` → Makefile 轉換器。解析 Eclipse CDT XML 取得 sources / includes / C defines / ASM-only defines（`tool.assembler` `assembler.defs`）/ 記憶體配置 / linker script，產生與 uv2make 相同格式的輸出。支援 M0/M3/M4 及 49x 系列，處理 HT32-IDE 特有的 exclude file 標記。`writeHt32IdeLists()` 分別寫入 `defines.list`（C defines）與 `adefines.list`（ASM-only defines），再由主程式呼叫 `writeCCDbFromLists()` 產生 compile_commands.json |
 | `tools/scatter2ld.ts` | Keil scatter file（`.sct` / `.lin`）→ GNU LD linker script 轉換器。支援 HT32 常見配置：標準 Flash/RAM、外部 SRAM、SPIM XIP、IAP offset、Option Bytes region。不處理組語轉換（`keil2gnu()` 在 `uv2make.ts`）；本模組聚焦 scatter 語法解析與 MEMORY/SECTIONS 產生 |
-| `tools/createProject.ts` | Create Project Wizard。從 bundled `templates/` 與使用者指定的 FWLib 目錄建立新的 GNU ARM 專案，產生 Makefile + linker script + startup + `project.settings.json`。支援標準系列（M0/M3/M4，讀 `.mk` template）與 49x 系列（無官方 GNU template，自產 Makefile）。包含 Settings Webview 的 recent FWLib 管理（最近 10 筆，選擇時移至首位）。寫入 .list 檔後呼叫 `writeCCDbFromLists()` 產生 compile_commands.json |
-| `tools/settingsWebview.ts` | HT32 Settings WebView 面板。分三個分頁：**Compiler**（optimization / specs / extra flags / include paths）、**Debugger**（debug interface / adapter serial / Flash & SPIM loader）、**Build**（output name / GCC & OpenOCD path）。<br>Compiler 另含：C Defines → `defines.list`<br>　　　　　　　ASM Defines → `adefines.list`<br>設定儲存於 `project.settings.json`，1.5 秒 auto-save；存檔後同步重寫對應 `.list` 檔與 `compile_commands.json`。`readProjectSettings()` 含舊版欄位自動 migration |
-| `tools/toolchain.ts` | ARM GCC 與 GNU Make 自動搜尋。**Make（Windows）**：VS Code 設定 → bundled `bin/win32-x64/make.exe`（GNU Make 4.4.1，保證支援 `$(file <...)`）→ 已安裝的 LLVM-MinGW → winget 自動安裝；Windows 不做 PATH / 系統掃描，避免搜到不支援 `$(file <...)` 的舊版本。**GCC（全平台）**：VS Code 設定 → PATH / 常見路徑掃描 → winget 安裝 `Arm.GnuArmEmbeddedToolchain` |
+| `tools/createProject.ts` | Create Project Wizard。從 bundled `templates/` 與使用者指定的 FWLib 目錄建立新的 GNU ARM 專案，產生 Makefile + linker script + startup + `project.settings.json`。支援標準系列（M0/M3/M4，讀 `.mk` template）與 49x 系列（無官方 GNU template，自產 Makefile）。包含 Settings Webview 的 recent FWLib 管理（最近 10 筆，選擇時移至首位）。寫入 .list 檔後呼叫 `writeCCDbFromLists()` 產生 compile_commands.json。Makefile 預設帶入 `extraCFlags: '-std=gnu11'`，與 Convert 路徑一致，避免 GCC 15 C23 `bool` 衝突 |
+| `tools/settingsWebview.ts` | HT32 Settings WebView 面板。分三個分頁：**Compiler**（optimization / specs / extra flags / include paths）、**Debugger**（debug interface / adapter serial / Flash & SPIM loader）、**Build**（output name / GCC & OpenOCD path）。<br>Compiler 另含：C Defines → `defines.list`<br>　　　　　　　ASM Defines → `adefines.list`<br>設定儲存於 `project.settings.json`，1.5 秒 auto-save；存檔後同步重寫對應 `.list` 檔與 `compile_commands.json`。`readProjectSettings()` 含舊版欄位自動 migration。`extraCFlags` 預設值為 `'-std=gnu11'`。GCC Path 欄位以 `placeholder` 顯示 `locateArmGcc()` 自動偵測到的路徑（空白表示未偵測到）；存檔時若有設定 GCC path，同步更新 Makefile 的 CC/AR/OBJCOPY/OBJDUMP/SIZE |
+| `tools/stackAnalysisProvider.ts` | Stack Usage Analysis 面板。透過 DAP `DebugAdapterTracker` 監聽 `stopped` 事件，讀取 `__StackTop` / `__HT_check_sp` / 當前 SP，計算 Used / Max / MaxAddr。支援兩種 Max 計算：session peak（最低 SP）與 paint watermark（`StackUsageAnalysisInit()` 填入 0xCDCDCDCD sentinel，掃描未被覆蓋區域）。`__StackTop` 優先讀 ELF symbol，備援 VTOR，解決 IAP/AP 場景下 Flash base 指向 bootloader 向量表的問題 |
+| `tools/utils.ts` | 共用工具函式。`semverCmp(a, b)`：版本字串語義比較（支援 `1.0.76`、xPack 目錄名、pack 檔名等格式），供 DFP 多版本排序與 GCC 版本比較使用 |
+| `tools/toolchain.ts` | ARM GCC 與 GNU Make 自動搜尋。**Make（Windows）**：VS Code 設定 → bundled `bin/win32-x64/make.exe`（GNU Make 4.4.1，保證支援 `$(file <...)`）→ 已安裝的 LLVM-MinGW → winget 自動安裝；Windows 不做 PATH / 系統掃描，避免搜到不支援 `$(file <...)` 的舊版本。**GCC（全平台）**：VS Code 設定 → `where`/`which` → HT32-IDE xPack 路徑 → `findArmGccShallow()`（最多 3 層 shallow scan，涵蓋 `C:\Program Files\Arm\`、`C:\Program Files (x86)\Arm\`、`C:\Program Files\Arm GNU Toolchain\`、`C:\Program Files (x86)\Arm GNU Toolchain\`；Arm 官方安裝程式版本子目錄名稱不固定，不能硬寫路徑）→ winget 安裝 `Arm.GnuArmEmbeddedToolchain`。偵測結果 in-session cache（`_gccPathCache`）；Settings WebView 開啟時以 `locateArmGcc()` 結果作為 GCC Path 欄位的 placeholder |
 
 ---
 

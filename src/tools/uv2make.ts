@@ -5,7 +5,7 @@ import * as path from "path";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { scatter2ld } from "./scatter2ld";
 import { semverCmp } from './utils';
-import { readProjectSettings, writeProjectSettings } from "./settingsWebview";
+import { readProjectSettings, writeProjectSettings, ProjectSettings } from "./settingsWebview";
 
 /* ──────────────────────────────────────
  * 共用 OutputChannel / Log
@@ -352,14 +352,14 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
     );
   }
 
-  // ★ 從 uvproj 自動推 CPU / FPU / float-abi，再和呼叫端 opts 合併
+  // ★ 從 uvproj 自動推 CPU / FPU / float-abi（flag 類設定由 project.settings.json 統一管理）
   const tc = extractToolchainFromUvproj(doc);
   logInfo('after extractToolchainFromUvproj');
-  const effectiveOpts: Uv2MakeOptions = {
-    ...opts,
-    mcu: opts.mcu ?? tc.mcu,
-    fpu: opts.fpu ?? tc.fpu,
-    floatAbi: opts.floatAbi ?? tc.floatAbi
+  const effectiveOpts = {
+    mcu:      opts.mcu      ?? tc.mcu,
+    fpu:      opts.fpu      ?? tc.fpu,
+    floatAbi: opts.floatAbi ?? tc.floatAbi,
+    cc:       opts.cc,
   };
 
   // 以裝置標頭 __FPU_PRESENT 驗證 FPU 設定：
@@ -495,9 +495,14 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
   }
 
   const finalPostBuildCmd = [uvPostBuildCmd, symdefsPostBuildCmd].filter(Boolean).join(' && ');
+  // project.settings.json 是 source of truth：先寫定所有旗標，再從它生成 Makefile。
+  const _existingSettings = readProjectSettings(outDirAbs);
   writeProjectSettings(outDirAbs, {
-    ...readProjectSettings(outDirAbs),
+    ..._existingSettings,
+    extraCFlags: _existingSettings.extraCFlags || '-std=gnu11',
     mcu:        buildMeta.mcu,
+    fpu:        buildMeta.fpu || 'none',
+    floatAbi:   buildMeta.floatAbi ?? 'soft',
     targetName: buildMeta.targetName,
     ramOrigin:  buildMeta.ramOrigin,
     ramLength:  buildMeta.ramLength,
@@ -554,7 +559,14 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
   }
 
   writeLists(outDirAbs, info);
-  writeMakefile(outDirAbs, makefileText(effectiveOpts, info, ldRelPath ? [ldRelPath] : []));
+  // Makefile 從已寫入的 project.settings.json 生成，確保兩者完全一致。
+  writeMakefile(outDirAbs, buildMakefileFromProjectSettings(readProjectSettings(outDirAbs), {
+    cc:            effectiveOpts.cc || 'arm-none-eabi-gcc',
+    srcs:          info.sources,
+    linkerScripts: ldRelPath ? [ldRelPath] : [],
+    isLibrary:     !!infoRaw.isLibrary,
+    comment:       'Converted from Keil uVision.',
+  }));
   writeCompileCommands(outDirAbs, effectiveOpts, info);
 
   const metaGroups: Record<string, string[]> = {};
@@ -1909,6 +1921,14 @@ function extractProjectInfo(doc: any, projDir: string, fallbackName: string, bui
         }
       }
 
+      // FreeRTOS RVDS port.c → GCC port.c（與下方 include path 替換對稱）
+      if (ext === '.c') {
+        finalRel = finalRel.replace(
+          /(portable)[/\\](rvds)[/\\](ARM_CM\w+)/i,
+          (_, p, __, arch) => `${p}/GCC/${arch}`
+        );
+      }
+
       // ── Per-file options (IncludeInBuild / useXO / RVCTCodeConst) ──────────
       const commonProp    = f?.FileOption?.CommonProperty;
       const fileCads      = f?.FileOption?.FileArmAds?.Cads;
@@ -1958,9 +1978,9 @@ function extractProjectInfo(doc: any, projDir: string, fallbackName: string, bui
   }
   for (const i of extra.incs) includes.push(resolveRel(projDir, i));
 
-  // FreeRTOS RVDS port 的 portmacro.h 含 ARMCC 專屬語法（__forceinline / __asm msr…），
-  // GCC 無法解析。自動將 portable/rvds/ARM_CMxx include path 替換為 GCC 版本。
-  // 適用於使用 include_port.c wrapper 的 Holtek 標準 FreeRTOS 專案。
+  // FreeRTOS RVDS port → GCC port（source 路徑已在 sources loop 中處理）：
+  // portmacro.h 含 ARMCC 專屬語法（__forceinline / __asm msr…），GCC 無法解析，
+  // 故 include path 也須同步替換 portable/rvds/ARM_CMxx → portable/GCC/ARM_CMxx。
   for (let i = 0; i < includes.length; i++) {
     includes[i] = includes[i].replace(
       /(portable)[/\\](rvds)[/\\](ARM_CM\w+)/i,
@@ -2291,26 +2311,40 @@ endif
 `.trimStart();
 }
 
-function makefileText(opts: Uv2MakeOptions, info: Extracted, linkerScripts: string[] = ['../GNU_ARM/linker.ld']): string {
+/** 從已寫入磁碟的 project.settings.json 生成 Makefile 文字。
+ *  project.settings.json 是 source of truth；呼叫前必須先完成 writeProjectSettings。 */
+export function buildMakefileFromProjectSettings(
+  settings: ProjectSettings,
+  extras: {
+    cc:            string;
+    srcs:          string[];
+    linkerScripts: string[];
+    isLibrary?:    boolean;
+    comment?:      string;
+  }
+): string {
   return buildMakefileText({
-    target:            info.targetName,
-    cc:                opts.cc || 'arm-none-eabi-gcc',
-    mcu:               opts.mcu ?? 'cortex-m0plus',
-    srcs:              info.sources,
-    linkerScripts,
-    isLibrary:         !!info.isLibrary,
-    fpu:               opts.fpu,
-    floatAbi:          opts.floatAbi,
-    optimizationLevel: opts.optimizationLevel,
-    debugInfo:         opts.debugInfo,
-    useNano:           opts.useNano,
-    useNosys:          opts.useNosys,
-    useLto:            opts.useLto,
-    printfFloat:       opts.printfFloat,
-    scanfFloat:        opts.scanfFloat,
-    extraCFlags:       opts.extraCFlags,
-    extraLDFlags:      opts.extraLDFlags,
-    comment:           'Converted from Keil uVision.',
+    target:            settings.targetName || 'firmware',
+    cc:                extras.cc,
+    mcu:               settings.mcu || 'cortex-m0plus',
+    srcs:              extras.srcs,
+    linkerScripts:     extras.linkerScripts,
+    isLibrary:         extras.isLibrary ?? false,
+    comment:           extras.comment,
+    fpu:               (settings.fpu && settings.fpu !== 'none') ? settings.fpu : undefined,
+    floatAbi:          settings.floatAbi as 'soft' | 'softfp' | 'hard' | undefined,
+    optimizationLevel: settings.optimizationLevel || undefined,
+    debugInfo:         settings.debugInfo || undefined,
+    useNano:           settings.useNano,
+    useNosys:          settings.useNosys,
+    useLto:            settings.useLto,
+    printfFloat:       settings.printfFloat,
+    scanfFloat:        settings.scanfFloat,
+    extraCFlags:       settings.extraCFlags || undefined,
+    extraLDFlags:      settings.extraLDFlags || undefined,
+    extraLibs:         (settings.extraLibs   ?? []).filter(Boolean),
+    extraLibNames:     (settings.extraLibNames ?? []).filter(Boolean),
+    extraLibPaths:     (settings.extraLibPaths ?? []).filter(Boolean),
   });
 }
 
@@ -2437,14 +2471,15 @@ export function writeCCDbFromLists(bgDir: string, opts: {
   fs.writeFileSync(path.join(bgDir, 'compile_commands.json'), JSON.stringify(ccdb, null, 2));
 }
 
-function writeCompileCommands(outDir: string, opts: Uv2MakeOptions, info: Extracted) {
+function writeCompileCommands(outDir: string, opts: { cc?: string; mcu?: string; fpu?: string; floatAbi?: string }, _info?: Extracted) {
+  const s = readProjectSettings(outDir);
   writeCCDbFromLists(outDir, {
     compiler:     opts.cc,
     armCore:      opts.mcu ?? 'cortex-m0plus',
     fpu:          (opts.fpu && opts.fpu !== 'none') ? opts.fpu : undefined,
     floatAbi:     opts.floatAbi,
-    optimization: opts.optimizationLevel || 'Os',
-    debugInfo:    opts.debugInfo || 'g3',
+    optimization: s.optimizationLevel || 'Os',
+    debugInfo:    s.debugInfo || 'g3',
   });
 }
 
@@ -2937,7 +2972,8 @@ export function regenerateMakefileFlags(
   const newLDFlags = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(opts.useNano, opts.useNosys)}${extraLDF}${ltoFlag}${printfF}${scanfF}`;
 
   // Upgrade old Makefiles that predate LD_NO_WARN dynamic detection.
-  if (!/^LD_NO_WARN\s*[=:]/m.test(content)) {
+  // Note: in the template, LD_NO_WARN is indented inside ifeq — must not anchor to ^.
+  if (!/LD_NO_WARN\s*[=:]/.test(content)) {
     const ldNoWarnBlock = [
       `comma := ,`,
       `ifeq ($(OS),Windows_NT)`,
