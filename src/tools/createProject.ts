@@ -431,9 +431,12 @@ export function openCreateProjectPanel(
     switch (msg.type) {
 
       case 'browseFwlib': {
+        const currentFwlib = (msg.currentPath as string | undefined)?.trim();
+        const defaultUri = (currentFwlib && fs.existsSync(currentFwlib))
+          ? vscode.Uri.file(currentFwlib) : undefined;
         const uris = await vscode.window.showOpenDialog({
           canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
-          openLabel: 'Select FWLib Root',
+          openLabel: 'Select FWLib Root', defaultUri,
         });
         if (!uris?.length) return;
         const p = uris[0].fsPath;
@@ -757,7 +760,7 @@ function onFwlibInput() {
   }, 500);
 }
 
-function browseFwlib()  { vscode.postMessage({ type: 'browseFwlib' }); }
+function browseFwlib()  { vscode.postMessage({ type: 'browseFwlib', currentPath: document.getElementById('fwlibPath').value.trim() }); }
 function browseFolder() {
   folderManuallyEdited = true;
   const current = document.getElementById('projectFolder').value.trim();
@@ -1081,12 +1084,13 @@ export async function generateProjectFiles(
       // Use FWLib exampleDir if present, otherwise fall back to bundled templates/
       const effectiveExDir = fs.existsSync(exampleDir) ? exampleDir : bundledExTemplDir;
 
-      // Copy all files from IP/Example/ (skipIfExists=true: protect user-modified files on re-run)
+      // Copy files from IP/Example/ (skipIfExists=true: protect user-modified files on re-run).
+      // Skip system_*.c variants that don't match this MCU — only the exact mk.systemFile is needed.
       if (effectiveExDir) {
         for (const f of fs.readdirSync(effectiveExDir)) {
-          if (fs.statSync(path.join(effectiveExDir, f)).isFile()) {
-            copyFileIfExists(path.join(effectiveExDir, f), path.join(srcDir, f), true);
-          }
+          if (!fs.statSync(path.join(effectiveExDir, f)).isFile()) continue;
+          if (/^system_ht32.*\.c$/i.test(f) && f !== mk.systemFile) continue;
+          copyFileIfExists(path.join(effectiveExDir, f), path.join(srcDir, f), true);
         }
       }
       // ht32_op.c: try FWLib GNU_ARM/, fallback to bundled

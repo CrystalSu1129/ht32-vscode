@@ -37,6 +37,18 @@ v0.1.8 摘要
 - 檔案產生 log：轉換時所有寫出的檔案顯示於 Output Channel
 
 修正
+- SPIM Extra Flash Loader 自動偵測失效：Convert uVision 含 ExtFlash region 時，QuickPick 不出現
+  根因一：`writeProjectSettings` 以 `JSON.stringify` 序列化完整物件，導致 `flashLoaders: []`
+  在 auto-detect 執行前就被寫入 project.settings.json；`generateTasksAndLaunch` 偵測到
+  key 存在即跳過 `selectSpimFlm`，QuickPick 永遠不出現
+  修正：`writeProjectSettings` 在 `flashLoaders` 為空陣列時省略該 key，保留 key 缺席
+  作為「從未設定」的語意；webview save（`{ keepEmptyFlashLoaders: true }`）仍寫入 `[]`，
+  以支援「使用者主動清空 loader、不再詢問」的 use case
+- SPIM 同位址 MEMORY region 重複插入：scatter 轉換使用 template-based 模式時（49x 系列），
+  FWLib template（`HT32F49395_FLASH.ld`）已有 `SPIM (rx) : ORIGIN = 0x08400000`，
+  scatter 解析出的 `ER_IROM2`（同位址）再次插入，產生重複 MEMORY 區塊
+  修正：`buildFromTemplate` 插入 extra MEMORY region 前先掃描 template 既有 ORIGIN，
+  重疊者跳過插入；customSection 的 `ldMem` 同步 remap 到 template 既有 region 名稱
 - Convert uVision / HT32-IDE：Makefile 初始產生時補上 `-std=gnu11`（三條路徑皆修正）
   根因：effectiveOpts.extraCFlags 未設預設值，初次 Makefile 產生無 -std=gnu11；
   project.settings.json 寫入時也未帶入，Settings Webview 存檔後才補上導致行為不一致
@@ -55,10 +67,17 @@ v0.1.8 摘要
 - Open Project 加速：多項效能優化（SVD Map、PDSC cache、只處理 .ht32vs 列出的 project）
 - Add New File saveLabel '&' 符號被 Windows dialog 吃掉，改用 '+'
 - findSvdFile：deviceName 帶封裝後綴（如 HT32F52341_48LQFP）時查不到 SVD，加入 strip 後綴 fallback
+- Create Project：複製 IP/Example/ 時改為只複製該 MCU 需要的 system_ht32*.c，
+  不再把同目錄下所有 system_ht32XXxxxx_NN.c 一起複製進 src/
 - Convert HT32-IDE FPU 誤判修正：.cproject 未設 fpu.name（值為 default 或欄位不存在）且目標為
   Cortex-M4 時，原本直接 fallback 為 fpv4-sp-d16 + hard-float，未���詢 __FPU_PRESENT；
   修正後先呼叫 detectFpuPresentFromHeader，__FPU_PRESENT=0 時正確輸出 -mfloat-abi=soft（無 -mfpu）
   已知受影響案例：HT32F490x1 系列（M4 無 FPU）
+- pyocd Attach：serverArgs 加入 `-O connect_mode=attach`，覆蓋 pyocd.yaml 的 under-reset 設定
+  讓 attach 時 pyocd 不碰 reset line，MCU 停在 current PC
+- OpenOCD Attach：移除所有 HLM target cfg 的 `connect_assert_srst`（HLMm0x / HLMm3x / HLMm4x
+  / HLM490x1 / HLM491x3 / HLM493x5），OpenOCD init 不再 assert SRST，MCU 停在 current PC
+  Debug 模式 reset 由 postLaunchCommands 的 `monitor reset halt` 負責
 
 ================================================================================
 
@@ -409,6 +428,19 @@ v0.1.8  (from v0.1.7)
   根因：$gcc 來源不明確（可能由 C/C++ extension 或其他 extension 注入），
   缺少提供者時出現「Invalid problemMatcher reference: $gcc」錯誤通知
   inline 格式：owner=gcc、fileLocation=autoDetect、pattern 匹配 file:line:col: severity: msg
+
+[Attach 不 reset MCU — pyocd / OpenOCD]
+- pyocd Attach：launch.json serverArgs 加入 `-O connect_mode=attach`
+  覆蓋 pyocd.yaml 的 `connect_mode: under-reset`，pyocd 連線時不碰 reset line
+  MCU 繼續執行，GDB attach 後 `monitor halt` 停在 current PC
+- OpenOCD Attach：移除所有 HLM target cfg 的 `connect_assert_srst`
+  受影響檔案：openocd/scripts/target/ 下的
+    HLMm0x.cfg / HLMm3x.cfg / HLMm4x.cfg / HLM490x1.cfg / HLM491x3.cfg / HLM493x5.cfg
+  根因：`connect_assert_srst` 告訴 OpenOCD init 時 assert SRST（硬體 reset）；
+  這個動作在 openOCDLaunchCommands 的 reset_config override 之前發生，
+  導致 attach 時 MCU 被 reset 而非停在 current PC
+  修正後：OpenOCD init 不 assert SRST；Debug 模式 reset 由 postLaunchCommands
+  的 `monitor reset halt` 明確發出
 
 v0.1.7  (from v0.1.6)
 --------------------------------------------------------------------------------

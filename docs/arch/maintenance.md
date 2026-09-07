@@ -33,6 +33,19 @@ tpiu create $_CHIPNAME.tpiu -dap $_CHIPNAME.dap -ap-num 0 -baseaddr 0xE0040000
 cortex-debug v1.12+ 的 `swoConfig.source = "probe"` 使用 `tpiu names`，
 沒有這行就會報 `Could not find TPIU/SWO names`。
 
+**所有 target cfg 的 `reset_config` 不可加 `connect_assert_srst`：**
+```tcl
+# 正確
+reset_config srst_only srst_push_pull srst_nogate
+
+# 禁止
+reset_config srst_only srst_push_pull connect_assert_srst srst_nogate
+```
+`connect_assert_srst` 讓 OpenOCD `init` 連線時 assert SRST（硬體 reset）；
+`openOCDLaunchCommands` 的 override 在 init 之後才執行，已來不及，
+導致 Attach 時 MCU 被 reset 而非停在 current PC。  
+Debug 的 reset 由 `postLaunchCommands: monitor reset halt` 明確發出，不依賴 init 時的 SRST。
+
 已加入：`HLM490x1.cfg`, `HLM491x3.cfg`, `HLM493x5.cfg`  
 不加：`HLMm0x.cfg`（M0/M0+ 無 ITM）  
 不加：`HLMm3x.cfg`（HT32F1xxxx M3 有 ITM core 且有 TRACESWO 功能與 `DBTRACE` 暫存器，但 JTDO/TDO 腳**未接出 package**；manual 列出 JTCK/JTMS/JTDI 但無 JTDO，也無任何 GPIO 對應 SWO）

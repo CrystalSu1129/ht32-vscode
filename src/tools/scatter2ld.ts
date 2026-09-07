@@ -308,7 +308,24 @@ function buildFromTemplate(
 
   // ── Insert extra MEMORY regions (IAP, SPIM, EXT_RAM, etc.) ────────────────
   // Sorted by origin; inserted just before the MEMORY block closing brace.
-  const extraMem = memRegions.filter(r => r !== flashRegion && r !== ramRegion);
+  // Build a map of ORIGIN → existing region name from the template so we can
+  // skip duplicate insertions and remap customSection ldMem references.
+  const templateOriginToName: Map<number, string> = new Map();
+  {
+    const re = /(\w+)\s*\([^)]*\)\s*:\s*ORIGIN\s*=\s*(0x[\da-fA-F]+|\d+)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(out)) !== null) {
+      templateOriginToName.set(parseInt(m[2]), m[1]);
+    }
+  }
+  // Remap customSection ldMem when the region is already in the template
+  for (const cs of customSections) {
+    const r = memRegions.find(mr => mr.ldName === cs.ldMem);
+    if (r && templateOriginToName.has(r.origin)) {
+      cs.ldMem = templateOriginToName.get(r.origin)!;
+    }
+  }
+  const extraMem = memRegions.filter(r => r !== flashRegion && r !== ramRegion && !templateOriginToName.has(r.origin));
   if (extraMem.length > 0) {
     const sorted = [...extraMem].sort((a, b) => a.origin - b.origin);
     const lines = sorted.map(r =>

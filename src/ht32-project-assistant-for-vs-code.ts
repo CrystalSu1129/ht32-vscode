@@ -1393,11 +1393,12 @@ function createProjectCommand(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     const cpBgDir = path.join(computeWsOpenRoot(result.projectFolder), result.projectName);
     if (fs.existsSync(cpBgDir)) {
       const answer = await vscode.window.showWarningMessage(
-        `"${cpBgDir}" already exists. Existing files will be overwritten. Continue?`,
+        `"${cpBgDir}" already exists. The folder will be deleted and recreated. Continue?`,
         { modal: true },
         'Continue'
       );
       if (answer !== 'Continue') return;
+      fs.rmSync(cpBgDir, { recursive: true, force: true });
     }
     await withProgress(`Create Project: ${result.projectName}`, async () => {
       await vscode.commands.executeCommand('workbench.action.closeAllEditors');
@@ -1469,11 +1470,12 @@ function addNewProjectCommand(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     const addBgDir = path.join(wsOpenRootPre, result.projectName);
     if (fs.existsSync(addBgDir)) {
       const answer = await vscode.window.showWarningMessage(
-        `"${addBgDir}" already exists. Existing files will be overwritten. Continue?`,
+        `"${addBgDir}" already exists. The folder will be deleted and recreated. Continue?`,
         { modal: true },
         'Continue'
       );
       if (answer !== 'Continue') return;
+      fs.rmSync(addBgDir, { recursive: true, force: true });
     }
 
     await withProgress(`Add New Project: ${result.projectName}`, async () => {
@@ -1783,11 +1785,12 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
   const ht32vsDirUv = bgParent(wsOpenRoot);
   if (fs.existsSync(ht32vsDirUv)) {
     const answer = await vscode.window.showWarningMessage(
-      `"${ht32vsDirUv}" already exists. Existing files will be overwritten. Continue?`,
+      `"${ht32vsDirUv}" already exists. The folder will be deleted and recreated. Continue?`,
       { modal: true },
       'Continue'
     );
     if (answer !== 'Continue') return;
+    fs.rmSync(ht32vsDirUv, { recursive: true, force: true });
   }
 
   // ── 步驟 2：執行轉換（帶 progress notification）──
@@ -2012,11 +2015,12 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     const ht32vsDirIde = bgParent(computeWsOpenRoot(wsRoot0));
     if (fs.existsSync(ht32vsDirIde)) {
       const answer = await vscode.window.showWarningMessage(
-        `"${ht32vsDirIde}" already exists. Existing files will be overwritten. Continue?`,
+        `"${ht32vsDirIde}" already exists. The folder will be deleted and recreated. Continue?`,
         { modal: true },
         'Continue'
       );
       if (answer !== 'Continue') return;
+      fs.rmSync(ht32vsDirIde, { recursive: true, force: true });
     }
   } catch { /* 若 parse 失敗就跳過確認，讓後續 convert 正常報錯 */ }
 
@@ -3383,7 +3387,8 @@ function buildPyocdServerConfigs(params: {
     preLaunchTask: debugBuildTask,
   };
 
-  const attachServerArgs = serverArgs.filter(a => a !== '--erase' && a !== 'chip' && a !== 'skip');
+  // Attach must not reset the target — override pyocd.yaml's connect_mode: under-reset
+  const attachServerArgs = [...serverArgs.filter(a => a !== '--erase' && a !== 'chip' && a !== 'skip'), '-O', 'connect_mode=attach'];
   const attachBase = { ...base, ...(attachServerArgs.length > 0 ? { serverArgs: attachServerArgs } : { serverArgs: undefined }) };
   if (!attachServerArgs.length) delete (attachBase as Record<string,unknown>).serverArgs;
 
@@ -4618,8 +4623,7 @@ function registerTreeEditCommands(
     const target = item ?? treeView.selection[0];
     if (!target) return;
     const parsed = parseFileItemId(target.id || '');
-    if (!parsed || target.contextValue !== 'file') return;
-    if (!parsed) return;
+    if (!parsed || (target.contextValue !== 'file' && target.contextValue !== 'linkerFile')) return;
     const { buildGenDir, groupName, filePath } = parsed;
 
     const absPath = target.resourceUri?.fsPath ?? path.resolve(tree.getRoot() ?? '', filePath);
@@ -4640,6 +4644,10 @@ function registerTreeEditCommands(
     const meta = readProjectMeta(buildGenDir);
     if (meta?.groups?.[groupName]) {
       meta.groups[groupName] = meta.groups[groupName].filter((f: string) => f !== filePath);
+      if (filePath.toLowerCase().endsWith('.ld') && meta.linkerScripts) {
+        const ldRel = path.relative(buildGenDir, path.resolve(path.dirname(path.dirname(buildGenDir)), filePath)).replace(/\\/g, '/');
+        meta.linkerScripts = meta.linkerScripts.filter((s: string) => s !== ldRel);
+      }
       updateProjectMeta(buildGenDir, meta);
     }
     tree.refresh();
@@ -5033,7 +5041,7 @@ class ProjectTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       return Promise.resolve(files.map(f => {
         const it = new vscode.TreeItem(path.basename(f), vscode.TreeItemCollapsibleState.None);
         it.id           = `${buildGenDir}::${groupName}::${f}`;
-        it.contextValue = 'file';
+        it.contextValue = f.toLowerCase().endsWith('.ld') ? 'linkerFile' : 'file';
         it.resourceUri  = vscode.Uri.file(path.resolve(fileBase, f));
         it.tooltip      = f;
         // Show subdirectory as description (e.g. "board/" for "board/lv_port_disp.c")
@@ -5072,6 +5080,7 @@ class ProjectTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       const item = new vscode.TreeItem(g, vscode.TreeItemCollapsibleState.Collapsed);
       item.contextValue = 'group';
       item.id = `${proj.buildGenDir}::${g}`;
+      if (g === 'Linker') item.iconPath = new vscode.ThemeIcon('link');
       return item;
     });
   }

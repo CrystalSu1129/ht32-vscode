@@ -331,6 +331,16 @@
           "command": "ht32.treeDeleteFile",
           "when": "view == ht32ProjectView && viewItem == file",
           "group": "1_edit@2"
+        },
+        {
+          "command": "ht32.treeRemoveFile",
+          "when": "view == ht32ProjectView && viewItem == linkerFile",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "ht32.treeDeleteFile",
+          "when": "view == ht32ProjectView && viewItem == linkerFile",
+          "group": "1_edit@2"
         }
       ],
       "view/title": [
@@ -635,6 +645,16 @@
         "command": "ht32.treeDeleteFile",
         "key": "delete",
         "when": "focusedView == ht32ProjectView"
+      },
+      {
+        "command": "ht32.download",
+        "key": "ctrl+alt+d",
+        "when": "ht32.hasProject"
+      },
+      {
+        "command": "ht32.runClean",
+        "key": "ctrl+alt+c",
+        "when": "ht32.hasProject"
       }
     ],
     "viewsWelcome": [

@@ -178,8 +178,16 @@ export function readProjectSettings(bgDir: string): ProjectSettings {
 }
 
 /** Write per-project settings to build-gen-{name}/project.settings.json */
-export function writeProjectSettings(bgDir: string, s: ProjectSettings): void {
-  fs.writeFileSync(path.join(bgDir, 'project.settings.json'), JSON.stringify(s, null, 2));
+export function writeProjectSettings(bgDir: string, s: ProjectSettings, opts?: { keepEmptyFlashLoaders?: boolean }): void {
+  // Omit flashLoaders when empty unless explicitly requested (e.g. webview save).
+  // Key absence = "never configured" → generateTasksAndLaunch will auto-detect SPIM.
+  // Key present as [] = user intentionally cleared loaders → skip auto-detect.
+  const toWrite: Record<string, unknown> = { ...s };
+  if (!opts?.keepEmptyFlashLoaders &&
+      (!Array.isArray(toWrite['flashLoaders']) || (toWrite['flashLoaders'] as unknown[]).length === 0)) {
+    delete toWrite['flashLoaders'];
+  }
+  fs.writeFileSync(path.join(bgDir, 'project.settings.json'), JSON.stringify(toWrite, null, 2));
 }
 
 function readMachineSettings(): MachineSettings {
@@ -503,7 +511,7 @@ export function openSettingsPanel(
       if (allProj) {
         for (const bg of bgDirs) {
           if (allProj[bg.name]) {
-            writeProjectSettings(bg.dir, { ...readProjectSettings(bg.dir), ...allProj[bg.name] });
+            writeProjectSettings(bg.dir, { ...readProjectSettings(bg.dir), ...allProj[bg.name] }, { keepEmptyFlashLoaders: true });
           }
         }
       } else {

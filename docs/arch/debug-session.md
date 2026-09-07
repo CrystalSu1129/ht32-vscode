@@ -45,7 +45,9 @@ runToEntryPoint: "main"
 
 **Attach 流程：**
 ```
-cortex-debug spawn pyocd-gdbserver（同上）
+cortex-debug spawn pyocd-gdbserver（同上，但 serverArgs 額外加 -O connect_mode=attach）
+  ↑ pyocd.yaml 的 connect_mode: under-reset 會讓 attach 時 MCU 被 reset
+  ↑ -O connect_mode=attach 覆蓋 yaml 設定，pyocd 連線時不碰 reset line，MCU 繼續執行
 GDB attach（不燒錄）
 preAttachCommands: set mem inaccessible-by-default off / set remotetimeout 300
 postAttachCommands: monitor halt / monitor arm semihosting enable
@@ -91,6 +93,7 @@ conf/Settings.ini [SRAM] → PDSC IRAM1 size → 0x20000（最終 fallback）
 - 設定值必須 ≤ 實際 RAM 大小；否則 FLM 存取超出 RAM 範圍 → BusFault → DHCSR FAULT ACK
 
 **launch.json 關鍵欄位：**
+**Debug launch.json 關鍵欄位：**
 ```json
 {
   "servertype": "pyocd",
@@ -106,12 +109,30 @@ conf/Settings.ini [SRAM] → PDSC IRAM1 size → 0x20000（最終 fallback）
 }
 ```
 
+**Attach launch.json 關鍵欄位：**
+```json
+{
+  "servertype": "pyocd",
+  "request": "attach",
+  "serverArgs": ["--pack", "<dfp.pack>", "--config", "<pyocd.yaml>", "--probe", "<serial>", "-O", "connect_mode=attach"],
+  "loadFiles": [],
+  "preAttachCommands": ["set mem inaccessible-by-default off", "set remotetimeout 300"],
+  "postAttachCommands": ["monitor halt", "monitor arm semihosting enable"],
+  "overrideResetCommands": ["monitor reset halt", "tbreak *main"]
+}
+```
+
 ---
 
 ### `servertype: "openocd"`
 
 cortex-debug 完全管理 OpenOCD 生命週期。OpenOCD 跑在 cortex-debug 建立的 **gdb-server** terminal 中，
 每次 F5 重新建立（不 reuse）。
+
+> **`connect_assert_srst` 不放在 HLM cfg 的原因：**
+> 若 HLM cfg 含 `connect_assert_srst`，OpenOCD 在 `init` 連線時會 assert SRST（硬體 reset），
+> 這個動作在 `openOCDLaunchCommands` 的 override 之前發生，導致 attach 時 MCU 被 reset。
+> 解法：cfg 只用 `srst_nogate`；debug 的 reset 靠 `postLaunchCommands: monitor reset halt` 處理。
 
 **Flash & Debug 流程（F5）：**
 ```

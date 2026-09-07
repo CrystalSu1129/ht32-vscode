@@ -77,7 +77,19 @@ key 為 `flm`（FLM basename），不再是 `hlm`。
 3. **過濾已覆蓋**：從 `project.settings.json` 的 `flashLoaders` 中 `enabled !== false` 條目移除已覆蓋位址
 4. **結果**：
    - `uncoveredAddrs.size === 0`：不問
-   - `uncoveredAddrs.size > 0`：呼叫 `selectSpimFlm()` → QuickPick
+   - `uncoveredAddrs.size > 0`：檢查 `flashLoadersExplicit` → 呼叫 `selectSpimFlm()` → QuickPick
+
+### `flashLoadersExplicit` 判斷
+
+`project.settings.json` 中 `flashLoaders` **key 存在**（包含 `[]`）即視為使用者已明確設定，跳過 auto-detect。
+
+| 狀態 | key 存在？ | 行為 |
+|---|---|---|
+| 從未設定（first convert） | 否 | 執行 auto-detect |
+| 使用者選了 loader | 是（有值）| 直接使用 |
+| 使用者在 Settings Webview 清空 | 是（`[]`）| 跳過，不再詢問 |
+
+**注意**：`writeProjectSettings`（extension 內部呼叫）在 `flashLoaders` 為空時**不寫入該 key**，避免「預設空值」被誤判為使用者明確設定。只有 Settings Webview 存檔時傳入 `{ keepEmptyFlashLoaders: true }`，才會保留 `[]`。
 
 ### `selectSpimFlm()` 優先順序
 
@@ -86,6 +98,15 @@ key 為 `flm`（FLM basename），不再是 `hlm`。
 3. **QuickPick**：多個選項 → 顯示 QuickPick（顯示 FLM 名稱去副檔名）
 
 選擇結果存入 `project.settings.json` 的 `flashLoaders`（`flm` 欄位）。
+
+### Template-based 模式的 MEMORY region 去重（49x 系列）
+
+49x FWLib template（`HT32F49395_FLASH.ld`）已包含 `SPIM (rx) : ORIGIN = 0x08400000`。  
+若 scatter 檔也有同位址的 exec region（如 `LR_EXTFLASH 0x08400000`），`buildFromTemplate` 會：
+
+1. 掃描 template 現有 MEMORY region，建立 `ORIGIN → regionName` map
+2. Extra region 若 ORIGIN 已在 template 中 → **跳過插入**（不產生重複 MEMORY 行）
+3. 對應 `customSection`（如 `.extflash`）的 `ldMem` **remap** 到 template 既有名稱（`SPIM`）
 
 ---
 
