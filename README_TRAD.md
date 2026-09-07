@@ -474,12 +474,12 @@ int main(void) {
 | Debug Level | 1~4 逐漸詳細（預設 1）|
 | DFP Path | 自訂 DFP 路徑 |
 | SVD File | 周邊暫存器 SVD 檔案（空白 = 自動偵測） |
-| Erase Mode | `erase_sector`（預設）/ `erase_chip` / `none` |
+| Erase Mode | `erase_sector`（預設）/ `erase_chip` |
 | Smart Flash | （僅 PyOCD）跳過未更動頁面，加速重複燒錄； |
 | Flash Loaders | 附加外部 Flash Loader（例如 SPI Flash） |
 
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/17.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/16.png" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 > 若使用 J-Link 搭配 OpenOCD，Windows 需將驅動更換為 WinUSB。切換後 SEGGER 工具（Keil、J-Flash 等）將無法辨識 J-Link，還原方式為重新安裝 SEGGER J-Link Software。搭配 pyOCD 則無需更換驅動。
 

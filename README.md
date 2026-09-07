@@ -453,8 +453,8 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 | Extra CFLAGS | Additional compiler flags, e.g. `-DDEBUG` |
 | Extra LDFLAGS | Additional linker flags |
 
-<img src="media/15-1.png" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-<img src="media/15-2.png" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="media/15-1.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="media/15-2.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 ---
 
@@ -472,11 +472,11 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 | Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; |
 | DFP Path | Custom DFP path for SVD auto-detection |
 | SVD File | Peripheral register SVD file (blank = auto-detect) |
-| Erase Mode | `erase_sector` (default) / `erase_chip` / `none` |
+| Erase Mode | `erase_sector` (default) / `erase_chip` |
 | Flash Loaders | Add external flash loaders (e.g. SPI Flash) |
 
-<img src="media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-<img src="media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="media/17.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="media/16.png" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 > When using J-Link with OpenOCD on Windows, the WinUSB driver is required. After switching, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; reinstall SEGGER J-Link Software to restore. pyOCD works with the original factory driver — no driver changes needed.
 
