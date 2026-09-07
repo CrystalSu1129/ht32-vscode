@@ -129,7 +129,8 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 | 樹狀根節點（`.ht32vs`） | Rename Project File（重新命名）|
 | 子專案節點 | Move Up（上移）、Move Down（下移）、Remove Project（從清單移除）、Add Group（新增群組） |
 | 群組 | Add New Files（新建檔案）、Add Existing Files（加入現有檔案）、Remove Group（移除群組） |
-| 檔案 | Remove from Group（從群組移除）、Delete File（從磁碟刪除） |
+| 檔案 | File Settings（排除編譯 / Execute-only / ROM region）、Remove from Group（從群組移除）、Delete File（從磁碟刪除） |
+| Linker 檔案（`.ld`） | Remove from Group（從群組移除）、Delete File（從磁碟刪除） |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/12.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 ---
@@ -329,7 +330,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 ## 清除
 
-- 點擊工具列的 **Clean**
+- 點擊工具列的 **Clean**，或按 **Ctrl+Alt+C**
 - 刪除 `HT32_VSCode/Project/build/`（或 `HT32_VSCode/Project_xxx/build/`）目錄下所有編譯輸出
 
 ---
@@ -347,7 +348,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 | **PyOCD**（預設） | 免安裝驅動；首次使用時自動安裝 |
 | **OpenOCD** | 已內建；可作為備選方案 |
 
-> 若使用 J-Link 搭配 OpenOCD，Windows 需將驅動更換為 WinUSB；搭配 pyOCD 則無需更換驅動。
+> 若使用 J-Link 搭配 OpenOCD，Windows 需將驅動更換為 WinUSB；搭配 pyOCD 則保留原廠驅動即可。
 
 所有相關設定詳見「[專案設定 → Debugger 分頁](#debugger-分頁)」。
 
@@ -356,7 +357,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 > 需要連接支援的除錯器（CMSIS-DAP / J-Link / ST-Link）
 
 1. 確認除錯器已連接並驅動正常
-2. 點擊工具列的 **Download**
+2. 點擊工具列的 **Download**，或按 **Ctrl+Alt+D**
 3. 韌體自動燒錄，終端機顯示進度
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/10.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
@@ -450,11 +451,13 @@ int main(void) {
 | Libraries (-l) | 要連結的函式庫名稱（`-lName`） |
 | Search Paths (-L) | 函式庫搜尋路徑（`-L"dir"`） |
 | Include Paths | 所有 `-I` 搜尋路徑，寫入 `includes.list`；轉換時自動填入，可在此新增額外路徑 |
+| C Defines | 前置處理器定義，寫入 `defines.list`；轉換時自動填入，可在此新增額外定義 |
+| ASM Defines | 組譯器前置處理器定義，寫入 `adefines.list`；轉換時自動填入，可在此新增額外定義 |
 | Extra CFLAGS | 附加編譯旗標，例如 `-DDEBUG` |
 | Extra LDFLAGS | 附加連結旗標 |
 
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-1.png" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
-<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-2.png" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-1.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-2.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 ---
 

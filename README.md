@@ -129,7 +129,8 @@ Hovering over the root node reveals:
 | Tree root (`.ht32vs`) | Rename Project File |
 | Sub-project node | Move Up, Move Down, Remove Project, Add Group |
 | Group | Add New Files, Add Existing Files, Remove Group |
-| File | Remove from Group, Delete File |
+| File | File Settings (exclude / execute-only / ROM region), Remove from Group, Delete File |
+| Linker file (`.ld`) | Remove from Group, Delete File |
 
 <img src="media/12.jpg" width="300" style="border:1px solid #ccc; border-radius:4px; padding:3px;"><br>
 ---
@@ -327,7 +328,7 @@ A **Post-Build** command can be configured in Settings to run automatically afte
 
 ## Clean
 
-- Click **Clean** in the HT32 toolbar
+- Click **Clean** in the HT32 toolbar, or press **Ctrl+Alt+C**
 - Deletes all compiled output under `HT32_VSCode/Project/build/` (or `HT32_VSCode/Project_xxx/build/` for multi-project)
 
 ---
@@ -345,7 +346,7 @@ Both Download and Debug run through the same **Debug Server**, selectable in **S
 | **PyOCD** (default) | No driver installation needed; installed automatically on first use |
 | **OpenOCD** | Bundled; available as an alternative |
 
-> When using J-Link with OpenOCD on Windows, the WinUSB driver is required. pyOCD does not require driver changes.
+> When using J-Link with OpenOCD on Windows, the WinUSB driver is required. pyOCD works with the original factory driver — no driver changes needed.
 
 For all related settings, see [Project Settings → Debugger tab](#debugger-tab).
 
@@ -354,7 +355,7 @@ For all related settings, see [Project Settings → Debugger tab](#debugger-tab)
 > Requires a supported debug probe connected (CMSIS-DAP / J-Link / ST-Link).
 
 1. Confirm the debug probe is connected and the driver is working
-2. Click **Download** in the HT32 toolbar
+2. Click **Download** in the HT32 toolbar, or press **Ctrl+Alt+D**
 3. Firmware is flashed automatically; progress is shown in the Terminal
 
 <img src="media/10.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
@@ -447,6 +448,8 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 | Libraries (-l) | Library names to link (`-lName`) |
 | Search Paths (-L) | Library search directories (`-L"dir"`) |
 | Include Paths | All `-I` paths written to `includes.list` — auto-populated at conversion; add extra paths here |
+| C Defines | Preprocessor defines written to `defines.list` — auto-populated at conversion; add extra defines here |
+| ASM Defines | Assembler preprocessor defines written to `adefines.list` — auto-populated at conversion; add extra defines here |
 | Extra CFLAGS | Additional compiler flags, e.g. `-DDEBUG` |
 | Extra LDFLAGS | Additional linker flags |
 
@@ -475,7 +478,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 <img src="media/17.jpg" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/16.png" width="700" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
-> When using J-Link with OpenOCD on Windows, the WinUSB driver is required. After switching, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; reinstall SEGGER J-Link Software to restore. pyOCD does not require driver changes.
+> When using J-Link with OpenOCD on Windows, the WinUSB driver is required. After switching, SEGGER tools (Keil, J-Flash) will no longer recognize J-Link; reinstall SEGGER J-Link Software to restore. pyOCD works with the original factory driver — no driver changes needed.
 
 ---
 
