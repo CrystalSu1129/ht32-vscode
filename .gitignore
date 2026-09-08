@@ -16,3 +16,4 @@ svn-ignore.txt
 svn-setup.bat
 pack_vsix.bat
 push_docs.bat
+push_source.bat
