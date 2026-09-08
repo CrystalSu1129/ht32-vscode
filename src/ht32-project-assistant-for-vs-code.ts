@@ -4066,6 +4066,7 @@ async function generateTasksAndLaunch(
       if (projSettings.adapterSpeed.trim()) {
         dlArgs.push('--frequency', String(Number(projSettings.adapterSpeed) * 1000));
       }
+      if (projSettings.eraseMode === 'erase_chip') { dlArgs.push('--erase=chip'); }
       if (projSettings.openocdDebugLevel >= 3)      { dlArgs.push('-v', '-v'); }   // DEBUG / DEBUG_IO
       else if (projSettings.openocdDebugLevel >= 2) { dlArgs.push('-v'); }          // INFO
       // level <= 1: no flag — pyocd default is already WARNING (level 0 removed)
@@ -4087,19 +4088,26 @@ async function generateTasksAndLaunch(
       });
     } else {
       // OpenOCD Download：Kill OpenOCD 確保燒錄前 probe 無人佔用
-      // SkipReadID 讓 auto_probe 跳過 MCU cfg DID 驗證（HT32F493x5 無 package-generic cfg 檔）
+      // SkipReadID 讓 auto_obe 跳過 MCU cfg DID 驗證（HT32F493x5 無 package-generic cfg 檔）
+      // erase_chip：program 內部寫死 flash write_image erase（sector erase），
+      //   與 ht_flags erase_chip 的 chip erase 雙重操作導致 algorithm execution error。
+      //   改用 init → reset halt → ht_flash erase_chip → ht_flash write_image，分離 erase 與 write。
+      // erase_sector：program 內建 sector erase，維持原行為。
+      const isChipErase = projSettings.eraseMode === 'erase_chip';
       const dlPostCmds = [
         `set_expected_name ${bgDeviceFinal} SkipReadID`,
-        `program ${bgElfForDl} reset exit`,
+        'init',
+        'reset halt',
+        ...(isChipErase ? ['ht_flash erase_chip'] : []),
+        `ht_flash write_image${isChipErase ? '' : ' erase'} ${bgElfForDl}`,
+        'reset run',
+        'exit',
       ];
-      // ht_flags erase_chip 讓 HLM 在寫入前跑整片 chip-erase algorithm，
-      // 但 flash write_image erase 已有 sector erase，雙重操作導致 algorithm execution error。
-      // Debug 模式的 GDB load 路徑不走此 flag，故 download 也跳過。
       const dlArgs = buildOpenOcdArgs(
         [interfaceCfgPath, bgTargetCfgPath],
         bgPreConfigCmds,
         dlPostCmds,
-        cmd => /^ht_flags\s+erase_chip/i.test(cmd),
+        undefined,
         projSettings.openocdDebugLevel,
       );
       taskList.push({

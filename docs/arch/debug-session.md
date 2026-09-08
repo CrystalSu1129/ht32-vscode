@@ -77,7 +77,8 @@ ELF 若含 `.extflash` section，GDB `load` 會把整段資料（可能 2MB+）�
 **EXT flash（SPIM）支援：**
 - `pyocd.yaml`：`connect_mode: under-reset`、`smart_flash`、`erase`、`user_script: pyocd_user.py`
   - `erase` 值對應：`erase_sector` → `sector`、`erase_chip` → `chip`、`none` → `skip`
-  - Settings Webview → Debugger → **Erase Mode** 寫入 yaml，GDB server / Download task 的 CLI 不另傳 `--erase`
+  - **注意**：`pyocd.yaml` 的 `erase` 設定實測無效（官方文件 `chip_erase: chip` 亦同），原因不明。
+  - erase_chip 時改由 Download task CLI 直接傳 `--erase=chip`，這是唯一有效的方式。
 - `pyocd_user.py`（extension 自動產生）：
   - `will_connect`：設定 RAM work area；有 loader → 解壓 FLM 並以 `FlashRegion` 動態註冊；無 loader → 移除 EXT flash region
   - `did_connect`：`print` 所有 flash region 對應的 Flash Loader 名稱（stdout，不受 log level 控制）
@@ -138,8 +139,13 @@ cortex-debug 完全管理 OpenOCD 生命週期。OpenOCD 跑在 cortex-debug 建
 ```
 preLaunchTask: Build & Download <suffix>  ← Build → Download（Download 內含 Kill OpenOCD）
   Build <suffix>：make -j（含 Post-Build）
-  Download <suffix>：Kill OpenOCD → openocd program <elf> reset exit
-    ↑ Kill 確保 probe 無人佔用；program exit 後 probe 釋放
+  Download <suffix>：Kill OpenOCD → openocd → init → reset halt → [erase] → write → reset run → exit
+    ↑ Kill 確保 probe 無人佔用；exit 後 probe 釋放
+    erase_sector：init → reset halt → ht_flash write_image erase <elf> → reset run → exit
+    erase_chip： init → reset halt → ht_flash erase_chip → ht_flash write_image <elf> → reset run → exit
+      ↑ 兩者皆採分離流程以保持一致性，不使用 program 指令。
+        原因：program 內部寫死 flash write_image erase（sector erase），
+        若搭配 ht_flags erase_chip 會產生雙重 erase → algorithm execution error。
 cortex-debug spawn OpenOCD（serverpath + configFiles + openOCDPreConfigLaunchCommands + openOCDLaunchCommands）
   openOCDPreConfigLaunchCommands（在 configFiles 之前）：hlm_SRAM / hlm_loader / set WORKAREASIZE
   openOCDLaunchCommands（在 configFiles 之後）：adapter serial / reset_config / set_expected_name / echo sentinel
