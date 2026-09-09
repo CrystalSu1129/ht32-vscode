@@ -294,9 +294,9 @@ Conversion warnings (e.g. prebuilt `.lib` files that cannot be used with GCC) ap
 
 <br>
 
-## Convert an HT32-IDE Project
+## Convert HT32-IDE Projects
 
-1. Click **Convert HT32-IDE Project** in the HT32 panel
+1. Click **Convert HT32-IDE Projects** in the HT32 panel
 2. Select one or more project folders containing `.project` / `.cproject` (Eclipse CDT format) — **multiple folders can be selected at once**
 
 Each selected folder is converted into its own folder inside `HT32_VSCode/`, sharing a common `HT32_VSCode/GNU_ARM/` for startup, linker script, and generated C files. The generated folder structure and TreeView organization are identical to a uVision conversion.
@@ -555,7 +555,7 @@ After conversion or project creation, the extension auto-generates `.clangd` and
 | `HT32: Create Project` | Open Create Project wizard |
 | `HT32: Open Project` | Browse for and open a `.ht32vs` project file |
 | `HT32: Convert uVision Project` | Import Keil `.uvprojx` / `.uvmpw` |
-| `HT32: Convert HT32-IDE Project` | Import Eclipse CDT `.project` |
+| `HT32: Convert HT32-IDE Projects` | Import Eclipse CDT `.project` |
 | `HT32: Build` | Run build task |
 | `HT32: Download` | Download firmware |
 | `HT32: Debug` | Start debug session |

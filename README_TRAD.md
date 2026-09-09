@@ -298,7 +298,7 @@ MyProject/                 ← 使用者命名的專案資料夾
 
 ## 匯入 HT32-IDE 專案
 
-1. HT32 面板 → **Convert HT32-IDE Project**
+1. HT32 面板 → **Convert HT32-IDE Projects**
 2. 選取一個或多個包含 `.project` / `.cproject` 的**專案資料夾**
 
 每個選取的資料夾各自轉換為 `HT32_VSCode/` 內的獨立目錄，共用 `HT32_VSCode/GNU_ARM/` 存放 startup、linker script 與自動產生的 C 檔案。產生的資料夾結構及**專案樹**組織方式，與匯入 uVision 專案相同。
@@ -560,7 +560,7 @@ int main(void) {
 | `HT32: Create Project` | 開啟建立專案精靈 |
 | `HT32: Open Project` | 瀏覽並開啟 `.ht32vs` 專案檔 |
 | `HT32: Convert uVision Project` | 匯入 Keil `.uvprojx` / `.uvmpw` |
-| `HT32: Convert HT32-IDE Project` | 匯入 Eclipse CDT `.project` |
+| `HT32: Convert HT32-IDE Projects` | 匯入 Eclipse CDT `.project` |
 | `HT32: Build` | 執行建置任務 |
 | `HT32: Download` | 燒錄韌體 |
 | `HT32: Debug` | 啟動除錯工作階段 |

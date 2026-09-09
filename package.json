@@ -118,7 +118,7 @@
       {
         "command": "ht32.convertHt32Ide",
         "category": "HT32",
-        "title": "Convert HT32-IDE Project",
+        "title": "Convert HT32-IDE Projects",
         "icon": "$(symbol-misc)"
       },
       {
