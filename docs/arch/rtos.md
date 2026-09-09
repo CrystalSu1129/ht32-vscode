@@ -59,19 +59,50 @@ HT32-IDE 專案使用的 FreeRTOS portable 通常已是 GCC 版（HT32-IDE 本�
 
 ---
 
-## launch.json
+## RTOS 偵測
 
-所有轉換路徑產生的 `launch.json` 均固定帶入：
+Extension **不**在 `project.meta.json` 或 `project.settings.json` 儲存 `rtos` 欄位。
+`generateTasksAndLaunch()` 動態掃描 `project.meta.json` 的 `groups` 所有檔案路徑，只要有任何路徑符合 `/freertos/i`，即視為 FreeRTOS 專案：
+
+```typescript
+const bgAllPaths = Object.values(bgMeta.groups).flat()
+  .concat(Object.keys(bgMeta.fileOptions ?? {}));
+bgRtos = bgAllPaths.some(p => /freertos/i.test(p)) ? 'FreeRTOS' : undefined;
+```
+
+好處：使用者在 create project 後自行加入 FreeRTOS 檔案，下次 Generate Build & Debug Config 即自動生效。
+
+---
+
+## launch.json — GDB Server 分流
+
+### OpenOCD
+
+`rtos` 欄位由 **cortex-debug** 處理，在 GDB 層解析 RTOS thread 結構。偵測到 FreeRTOS 時寫入：
 
 ```json
 "rtos": "FreeRTOS"
 ```
 
-cortex-debug 藉此啟用 FreeRTOS task list 支援（在非 RTOS 專案上為 no-op，無副作用）。
+### pyocd
+
+`rtos` 欄位是 **OpenOCD 專用**，pyocd 路徑的 launch config **不加**此欄位。
+
+pyocd 透過自身的 RTOS plugin 系統提供 thread awareness，可自動偵測 FreeRTOS，無需額外設定。
+若需明確控制，可在 `pyocd.yaml` 加：
+
+```yaml
+rtos.enable: true
+rtos.name: FreeRTOS   # 通常自動偵測即可
+```
+
+> **注意**：`rtos.enable: false` 實測可能無法停用自動偵測。
 
 ---
 
 ## 相關位置
 
-- `src/tools/uv2make.ts` — sources loop `.c` 替換 / includes 替換（鄰近程式碼）
-- `src/ht32-project-assistant-for-vs-code.ts` — `generateTasksAndLaunch()`，`"rtos": "FreeRTOS"` 寫入
+- `src/tools/uv2make.ts` — sources loop `.c` 替換 / includes 替換
+- `src/ht32-project-assistant-for-vs-code.ts` — `generateTasksAndLaunch()`，`bgRtos` 偵測與分流
+- `buildPyocdServerConfigs()` — 不接受 `rtos` 參數
+- `buildOpenocdServerConfigs()` — 接受 `rtos?` 參數

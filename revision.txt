@@ -2,7 +2,7 @@
 Holtek HT32 VS Code Extension — Revision History
 ================================================================================
 
-v0.1.8 摘要
+v0.2.0 摘要
 --------------------------------------------------------------------------------
 
 新功能
@@ -78,6 +78,13 @@ v0.1.8 摘要
 - OpenOCD Attach：移除所有 HLM target cfg 的 `connect_assert_srst`（HLMm0x / HLMm3x / HLMm4x
   / HLM490x1 / HLM491x3 / HLM493x5），OpenOCD init 不再 assert SRST，MCU 停在 current PC
   Debug 模式 reset 由 postLaunchCommands 的 `monitor reset halt` 負責
+- Erase Mode — OpenOCD chip erase 修正：原本 `ht_flags erase_chip`（preconfig）搭配
+  `program`（內建 sector erase）會產生雙重 erase → algorithm execution error；
+  改為兩種模式統一採分離流程：
+  erase_sector：init → reset halt → ht_flash write_image erase <elf> → reset run → exit
+  erase_chip： init → reset halt → ht_flash erase_chip → ht_flash write_image <elf> → reset run → exit
+- Erase Mode — pyocd chip erase 修正：pyocd.yaml 的 `erase: chip` 實測無效（官方文件
+  `chip_erase: chip` 亦同）；erase_chip 時改由 Download task CLI 直接傳 `--erase=chip`
 
 ================================================================================
 

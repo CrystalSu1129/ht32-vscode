@@ -3,7 +3,7 @@
 ## 三種 servertype 模式
 
 Extension 支援三種模式，透過 Settings Webview → Debugger → **Debug Server** 切換，
-對應 `project.settings.json` 的 `openocdServerType` 欄位（`"pyocd"` / `"openocd"`，預設 `"pyocd"`）。
+對應 `project.settings.json` 的 `serverType` 欄位（`"pyocd"` / `"openocd"`，預設 `"pyocd"`）。
 
 切換後執行 **HT32: Generate Build & Debug Config** 重新產生 `tasks.json` / `launch.json`。
 
@@ -46,13 +46,24 @@ runToEntryPoint: "main"
 **Attach 流程：**
 ```
 cortex-debug spawn pyocd-gdbserver（同上，但 serverArgs 額外加 -O connect_mode=attach）
-  ↑ pyocd.yaml 的 connect_mode: under-reset 會讓 attach 時 MCU 被 reset
-  ↑ -O connect_mode=attach 覆蓋 yaml 設定，pyocd 連線時不碰 reset line，MCU 繼續執行
 GDB attach（不燒錄）
 preAttachCommands: set mem inaccessible-by-default off / set remotetimeout 300
 postAttachCommands: monitor halt / monitor arm semihosting enable
-overrideResetCommands: monitor reset halt / tbreak *main / continue
+overrideResetCommands: monitor reset halt / tbreak *main
+  ↑ cortex-debug 執行完後自動加 continue，不需明確寫（不同於 external attach）
 ```
+
+> **Attach 不能 reset 的設計：`-O connect_mode=attach`**
+>
+> `pyocd.yaml` 固定寫入 `connect_mode: under-reset`，這讓 pyocd 在連線時 assert nRESET line，
+> 確保 debug 啟動時 MCU 從乾淨狀態開始。但若 attach 也走這個流程，MCU 會被強制 reset，
+> 破壞正在執行的狀態，失去 attach 的意義。
+>
+> 解法：attach 的 serverArgs 額外加 `-O connect_mode=attach`，
+> 這個 CLI 選項優先於 yaml 設定，pyocd 連線時完全不碰 reset line，MCU 繼續執行。
+>
+> Debug 和 Attach 共用同一份 `pyocd.yaml`（`connect_mode: under-reset`），
+> 差異只在 serverArgs 是否帶 `-O connect_mode=attach`。
 
 **Download（獨立燒錄，不 debug）：**
 ```
@@ -122,6 +133,8 @@ conf/Settings.ini [SRAM] → PDSC IRAM1 size → 0x20000（最終 fallback）
   "overrideResetCommands": ["monitor reset halt", "tbreak *main"]
 }
 ```
+
+> **`rtos` 欄位**：pyocd launch config **不加** `"rtos": "FreeRTOS"`。該欄位是 cortex-debug 針對 OpenOCD 設計的，pyocd 透過自身 RTOS plugin 自動偵測，詳見 `arch/rtos.md`。
 
 ---
 

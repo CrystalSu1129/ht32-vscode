@@ -644,7 +644,7 @@ export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildProjectMeta(result: Ht32IdeResult, wsRoot: string): {
-  projectName: string; groups: Record<string, string[]>; fileOptions?: Record<string, FileOption>;
+  projectName: string; groups: Record<string, string[]>; fileOptions?: Record<string, FileOption>; rtos?: string;
 } {
   const groups: Record<string, string[]> = {};
   const fileOptions: Record<string, FileOption> = {};

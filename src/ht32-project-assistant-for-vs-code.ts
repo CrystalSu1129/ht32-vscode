@@ -118,7 +118,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     let bgDir: string | undefined;
     if (cv === 'project') {
       bgDir = item.id;
-    } else if (cv === 'group' || cv === 'file') {
+    } else if (cv === 'group' || cv === 'file' || cv === 'linkerFile') {
       const sep = (item.id ?? '').indexOf('::');
       if (sep >= 0) bgDir = item.id!.slice(0, sep);
     }
@@ -158,7 +158,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   const stackProvider = new StackAnalysisProvider(ctx);
   ctx.subscriptions.push(vscode.window.createTreeView('ht32StackView', { treeDataProvider: stackProvider }));
-  ctx.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('*', new StackAnalysisTrackerFactory(stackProvider)));
+  ctx.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('cortex-debug', new StackAnalysisTrackerFactory(stackProvider)));
   await vscode.commands.executeCommand('setContext', 'ht32.hasRecent', initRecents.length > 0);
 
   // Commands
@@ -3424,10 +3424,11 @@ function buildOpenocdServerConfigs(params: {
   openocdExe:      string;
   gdbPath:         string | undefined;
   debugBuildTask:  string;
+  rtos?:           string;
 }): [object, object] {
   const { configName, attachName, bgExecutable, bgDeviceFinal, bgSvdEntry,
           bgConfigFiles, bgPreConfigCmds, bgServerArgs, openocdExe, gdbPath,
-          debugBuildTask } = params;
+          debugBuildTask, rtos } = params;
 
   const adapterCmds = bgPreConfigCmds.filter(c => c.startsWith('adapter '));
   const hlmCmds     = bgPreConfigCmds.filter(c => !c.startsWith('adapter '));
@@ -3449,7 +3450,7 @@ function buildOpenocdServerConfigs(params: {
     serverpath:                    openocdExe,
     configFiles:                   bgConfigFiles,
     ...bgServerArgs,
-    rtos:                          'FreeRTOS',
+    ...(rtos ? { rtos } : {}),
     liveWatch:                     { enabled: true, samplesPerSecond: 4 },
     ...(gdbPath ? { gdbPath } : {}),
   };
@@ -3816,6 +3817,7 @@ async function generateTasksAndLaunch(
     // Check whether the linker has flash regions not covered by the primary loader or any enabled extra loaders.
     // Always runs (even when enabledFlashLoaders is non-empty) so that LD changes are detected.
     let bgInternalFlashEnd = 0;
+    let bgRtos: string | undefined;
     {
       // Resolve the primary linker script path from meta.linkerScripts[0] (bgDir-relative).
       let bgLdFile: string | undefined;
@@ -3823,6 +3825,9 @@ async function generateTasksAndLaunch(
         const bgMetaRaw = fs.readFileSync(path.join(bgParentDir, bg, 'project.meta.json'), 'utf8');
         const bgMeta = JSON.parse(bgMetaRaw);
         bgLdFile = (bgMeta.linkerScripts as string[] | undefined)?.[0] ?? bgMeta.ldFile ?? undefined;
+        const bgAllPaths = Object.values(bgMeta.groups as Record<string, string[]> ?? {}).flat()
+          .concat(Object.keys(bgMeta.fileOptions ?? {}));
+        bgRtos = bgAllPaths.some((p: string) => /freertos/i.test(p)) ? 'FreeRTOS' : undefined;
       } catch (e: any) {
         logWarn(`${bg}: failed to read project.meta.json for linker script path: ${e?.message ?? e}; flash coverage check may be inaccurate`);
       }
@@ -3963,6 +3968,7 @@ async function generateTasksAndLaunch(
         openocdExe,
         gdbPath,
         debugBuildTask: debugPreLaunchLabel(bg),
+        rtos:           bgRtos,
       });
       configurations.push(debugCfg, attachCfg);
     } else if (projSettings.serverType === 'external') {
@@ -4046,6 +4052,7 @@ async function generateTasksAndLaunch(
         openocdExe,
         gdbPath,
         debugBuildTask: debugPreLaunchLabel(bg),
+        rtos:           bgRtos,
       });
       configurations.push(debugCfg, attachCfg);
     }
@@ -5083,12 +5090,12 @@ class ProjectTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     const groupNames = (proj.meta?.groups
       ? Object.keys(proj.meta.groups)
       : this.inferGroupNames(proj.files)
-    ).filter(g => !g.startsWith('__')); // guard against any future internal __ groups
+    ).filter(g => !g.startsWith('__')) // guard against any future internal __ groups
+     .sort((a, b) => (a === 'Linker' ? 1 : b === 'Linker' ? -1 : 0));
     return groupNames.map(g => {
       const item = new vscode.TreeItem(g, vscode.TreeItemCollapsibleState.Collapsed);
       item.contextValue = 'group';
       item.id = `${proj.buildGenDir}::${g}`;
-      if (g === 'Linker') item.iconPath = new vscode.ThemeIcon('link');
       return item;
     });
   }
