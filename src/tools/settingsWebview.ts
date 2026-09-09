@@ -1110,6 +1110,8 @@ if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
 function selectAdapter(bgName, serial) {
   var p = bgName ? bgName + '__' : '';
   document.getElementById(p + 'adapterSerial').value = serial;
+  var w = document.getElementById(p + 'serialNotFoundWarn');
+  if (w) { w.style.display = 'none'; }
   scheduleAutoSave();
   // Highlight selected button without hiding the list
   var box = document.getElementById(p + 'adapterListResult');
@@ -1163,8 +1165,10 @@ window.addEventListener('message', function(event) {
   var serialInput = document.getElementById(p + 'adapterSerial');
   if (!box || !serialInput) return;
   var adapters = msg.adapters || [];
+  var serialWarn = document.getElementById(p + 'serialNotFoundWarn');
   if (adapters.length === 0) {
     serialInput.placeholder = 'Empty = auto (only works when 1 probe connected)';
+    if (serialInput.value.trim() && serialWarn) { serialWarn.style.display = 'block'; }
     if (msg.fromUser) {
       box.innerHTML = '<p class="hint" style="color:var(--vscode-inputValidation-warningForeground);margin:0">No adapters found. Make sure the adapter is connected.</p>';
       box.style.display = 'block';
@@ -1175,7 +1179,10 @@ window.addEventListener('message', function(event) {
   if (!currentSerial && adapters[0] && adapters[0].serial) {
     currentSerial = adapters[0].serial;
     serialInput.value = currentSerial;
-    scheduleAutoSave();
+    if (msg.fromUser) { scheduleAutoSave(); }
+  }
+  if (serialWarn) {
+    serialWarn.style.display = currentSerial.trim() && !adapters.some(function(a) { return a.serial === currentSerial; }) ? 'block' : 'none';
   }
   serialInput.placeholder = 'Empty = auto (only works when 1 probe connected)';
   var noSerialCount = adapters.filter(function(a) { return !a.serial; }).length;
@@ -1368,9 +1375,10 @@ ${titleHtml}
 <div class="row">
   <label>Adapter Serial</label>
   <div style="display:flex;gap:6px;align-items:center">
-    <input id="${id('adapterSerial')}" type="text" value="${esc(s.adapterSerial)}" placeholder="Empty = auto (only works when 1 probe connected)" style="flex:1">
+    <input id="${id('adapterSerial')}" type="text" value="${esc(s.adapterSerial)}" placeholder="Empty = auto (only works when 1 probe connected)" style="flex:1" oninput="var w=document.getElementById('${id('serialNotFoundWarn')}');if(w)w.style.display='none'">
     <button id="${id('scanBtn')}" class="btn-primary" onclick="scanAdapters('${esc(bgName || '')}')">Scan</button>
   </div>
+  <div id="${id('serialNotFoundWarn')}" style="display:none;margin-top:4px;padding:4px 8px;border-radius:3px;background:var(--vscode-inputValidation-warningBackground);border:1px solid var(--vscode-inputValidation-warningBorder);font-size:0.85em;color:var(--vscode-inputValidation-warningForeground)">&#9888; This adapter is not currently connected.</div>
   <div id="${id('adapterListResult')}" style="display:none;margin-top:6px"></div>
   <div id="${id('idcodeResult')}" style="display:none;margin-top:6px;font-family:monospace;font-size:0.82em;white-space:pre;color:var(--vscode-descriptionForeground);background:var(--vscode-editor-background);padding:4px 8px;border-radius:3px;border:1px solid var(--vscode-widget-border)"></div>
   <p class="hint">Serial number of the debug adapter. Required when multiple adapters of the same type are connected.</p>

@@ -13,11 +13,12 @@
 | `AREA RESET, CODE/DATA, READONLY` | `.section .isr_vector,"a",%progbits` | Vector table 特例（M0 用 DATA,READONLY；M3 用 CODE,READONLY） |
 | `AREA x, CODE, READONLY`（簡單名稱，非 RESET） | `.section .x,"ax",%progbits` | 具名可執行段（flash-image builder 的 LOADER/LAYOUT/AREA1 等各自獨立放置）；`\|...\|` 括住的複雜名稱 fallback 到 `.text` |
 | `AREA x, CODE, READONLY`（`\|...\|` 複雜名稱） | `.text` | 一般程式碼段 |
-| `AREA x, DATA, READONLY`（簡單名稱如 IAP） | `.section .iap,"a",%progbits` | 具名唯讀段（binary-embed 等）；`\|...\|` 括住的複雜名稱 fallback 到 `.section .rodata` |
-| `AREA x, DATA, READWRITE` | `.section .data` | 可讀寫資料段 |
+| `AREA x, DATA, READONLY`（簡單名稱如 IAP） | `.section .iap,"a",%progbits` | 具名唯讀段（binary-embed 等） |
+| `AREA x, DATA, READONLY`（`\|...\|` 複雜名稱） | `.section .rodata` | `\|...\|` 括住的複雜名稱 fallback |
+| `AREA x, DATA, READWRITE` | `.data` | 可讀寫資料段 |
 | `AREA STACK, NOINIT, READWRITE` | `.section ".stack","aw",%nobits` | Stack 特例 |
 | `AREA HEAP, NOINIT, READWRITE` | `.section ".heap","aw",%nobits` | Heap 特例 |
-| `AREA x, NOINIT, READWRITE` | `.section .bss` | 其他未初始化資料段 |
+| `AREA x, NOINIT, READWRITE` | `.bss` | 其他未初始化資料段 |
 | `AREA x, ..., ALIGN=n` | `.balign (1<<n)` | ALIGN=3 → `.balign 8` |
 | `DCD val` | `.word val` | 32-bit 資料 |
 | `DCW val` | `.hword val` | 16-bit 資料 |

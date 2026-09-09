@@ -416,29 +416,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
         selectedConfig = allConfigs.find((c: any) => c.name === picked) ?? allConfigs[0];
       }
 
-      // If a specific adapter serial was configured, verify it is still connected.
-      // If not found, offer to start with auto-detect (no serial restriction).
-      const preConfigCmds: string[] = selectedConfig.openOCDPreConfigLaunchCommands ?? [];
-      const serialCmd = preConfigCmds.find((cmd: string) => cmd.startsWith('adapter serial '));
-      if (serialCmd) {
-        const serial = serialCmd.replace('adapter serial ', '').trim();
-        const ifacePath: string = ((selectedConfig.configFiles ?? [])[0] ?? '').toLowerCase();
-        const iface = ifacePath.includes('stlink') ? 'ST-Link'
-                    : ifacePath.includes('jlink')  ? 'J-Link'
-                    : 'CMSIS-DAP';
-        const adapters = await scanAdapters(iface);
-        if (!adapters.some(a => a.serial === serial)) {
-          // Strip serial from this session's launch config
-          selectedConfig = {
-            ...selectedConfig,
-            openOCDPreConfigLaunchCommands: preConfigCmds.filter((cmd: string) => !cmd.startsWith('adapter serial ')),
-          };
-          // Also clear the stale serial from project.settings.json so it won't be used again
-          const bgDirName = bgDirFromConfigName(selectedConfig.name, _debugParent);
-          const bgDir = path.join(bgParent(folder.uri.fsPath), bgDirName);
-          const projSettings = readProjectSettings(bgDir);
-          writeProjectSettings(bgDir, { ...projSettings, adapterSerial: '' });
-        }
+      // Verify the stored adapter serial is still connected; if stale, clear it and
+      // regenerate tasks/launch so future runs are also clean.
+      const bgDirName = bgDirFromConfigName(selectedConfig.name, _debugParent);
+      const bgDir = path.join(bgParent(folder.uri.fsPath), bgDirName);
+      const serialFresh = await ensureAdapterSerialFresh(bgDir, folder.uri.fsPath);
+      if (!serialFresh) {
+        // Also strip from this session's in-memory config so startDebugging uses auto-detect.
+        const preConfigCmds: string[] = selectedConfig.openOCDPreConfigLaunchCommands ?? [];
+        selectedConfig = {
+          ...selectedConfig,
+          openOCDPreConfigLaunchCommands: preConfigCmds.filter((cmd: string) => !cmd.startsWith('adapter serial ')),
+        };
       }
 
       ourDebugStartPending = true;
@@ -966,6 +955,25 @@ function computeWsOpenRoot(root: string): string {
   return path.basename(bp).toLowerCase() === HT32_VSCODE_DIRNAME.toLowerCase() ? bp : root;
 }
 
+/**
+ * Checks whether the stored adapter serial for bgDir is still connected.
+ * If stale: clears adapterSerial in project.settings.json, regenerates tasks/launch
+ * so the files are clean for future runs, shows a warning, and returns false.
+ * Returns true when serial is empty (auto-detect) or the adapter is present.
+ */
+async function ensureAdapterSerialFresh(bgDir: string, wsRoot: string): Promise<boolean> {
+  const projSettings = readProjectSettings(bgDir);
+  const serial = projSettings.adapterSerial?.trim();
+  if (!serial) return true;
+
+  const adapters = await scanAdapters(projSettings.debugInterface ?? 'CMSIS-DAP');
+  if (adapters.some(a => a.serial === serial)) return true;
+
+  writeProjectSettings(bgDir, { ...projSettings, adapterSerial: '' });
+  await generateTasksAndLaunch(wsRoot);
+  return false;
+}
+
 /** Build / Clean 按鈕的智慧路由：
  *  - 只有一個 build-gen → 直接執行
  *  - 多個 build-gen    → QuickPick 讓使用者選擇
@@ -1029,6 +1037,9 @@ async function smartRunTask(kind: 'build' | 'clean' | 'download') {
   }
 
   if (bgDirs.length === 1) {
+    if (kind === 'download') {
+      await ensureAdapterSerialFresh(path.join(bgParent(root), bgDirs[0]), root);
+    }
     await runTask(taskLabel(bgDirs[0]));
     return;
   }
@@ -1048,6 +1059,12 @@ async function smartRunTask(kind: 'build' | 'clean' | 'download') {
   const placeHolder = kind === 'build' ? 'Select project to build' : kind === 'clean' ? 'Select project to clean' : 'Select project to download';
   const sel = await vscode.window.showQuickPick(items, { placeHolder });
   if (!sel) return;
+  if (kind === 'download') {
+    const selectedBg = bgDirs.find(d => taskLabel(d) === sel.label);
+    if (selectedBg) {
+      await ensureAdapterSerialFresh(path.join(bgParent(root), selectedBg), root);
+    }
+  }
   await runTask(sel.label);
 }
 
