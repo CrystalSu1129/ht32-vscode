@@ -4513,6 +4513,15 @@ function registerTreeEditCommands(
 ): void {
   const root = () => currentWsRoot();
 
+  // Reveal project source root in OS file manager
+  ctx.subscriptions.push(vscode.commands.registerCommand('ht32.treeRevealProjectFolder', async (item: vscode.TreeItem) => {
+    const buildGenDir = item.id;
+    if (!buildGenDir) return;
+    // buildGenDir = …/HT32_VSCode/Project  → HT32_VSCode is the workspace/source root
+    const sourceRoot = path.dirname(buildGenDir);
+    await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(sourceRoot));
+  }));
+
   // Add Group (right-click on project node)
   ctx.subscriptions.push(vscode.commands.registerCommand('ht32.treeAddGroup', async (item: vscode.TreeItem) => {
     const buildGenDir = item.id;

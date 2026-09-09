@@ -92,6 +92,12 @@
         "icon": "$(new-collection)"
       },
       {
+        "command": "ht32.treeRevealProjectFolder",
+        "category": "HT32",
+        "title": "Open Folder in Explorer",
+        "icon": "$(folder-opened)"
+      },
+      {
         "command": "ht32.deleteProject",
         "category": "HT32",
         "title": "Remove Project",
@@ -291,6 +297,11 @@
           "command": "ht32.treeMoveProjectDown",
           "when": "view == ht32ProjectView && viewItem == project && ht32.canMoveProjectDown",
           "group": "1_order@2"
+        },
+        {
+          "command": "ht32.treeRevealProjectFolder",
+          "when": "view == ht32ProjectView && viewItem == project",
+          "group": "2_edit@0"
         },
         {
           "command": "ht32.deleteProject",
