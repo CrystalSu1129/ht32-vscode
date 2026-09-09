@@ -127,7 +127,7 @@ Hovering over the root node reveals:
 | Target | Actions |
 |--------|---------|
 | Tree root (`.ht32vs`) | Rename Project File |
-| Sub-project node | Move Up, Move Down, Remove Project, Add Group |
+| Sub-project node | Move Up, Move Down, Open Folder in Explorer, Remove Project, Add Group |
 | Group | Add New Files, Add Existing Files, Remove Group |
 | File | File Settings (exclude / execute-only / ROM region), Remove from Group, Delete File |
 | Linker file (`.ld`) | Remove from Group, Delete File |
