@@ -127,7 +127,7 @@ Stack Analysis 面板需要從 ELF symtab 讀取 `__StackTop`（stack 上限）�
 | 修改 | 原因 |
 |---|---|
 | `._user_heap_stack { *(.heap) *(.stack) }` → 拆成獨立 `.heap` / `.stack` section 並加 `KEEP()` | `--gc-sections` 會丟棄沒有 `KEEP()` 的 section；拆開後才能用 `SIZEOF(.stack)` 取得確切大小 |
-| FLASH / RAM origin + length patch | template 的 LENGTH 是佔位符（通常 1024K）；需換成 PDSC / Settings.ini 的正確值 |
+| FLASH / RAM origin + length patch | template 的 LENGTH 是佔位符（通常 1024K）；需換成 PDSC / Settings.ini 的正確值。**條件**：僅在 .ld 中讀到的 `LENGTH ≥ 1MB`（1048576 bytes）時才替換，已有正確值（HT32-IDE 自訂 .ld）則原封不動。ORIGIN 刻意不改，IAP/特殊佈局可能使用非標準起始位址。RAM 有 ORIGIN offset 時，LENGTH 會自動扣掉 offset（`offset = ORIGIN - 0x20000000`）以避免 `__StackTop` 超出實體 RAM。|
 | 49x：`_estack = 0x2xxxxxxx` → `_estack = ORIGIN(RAM) + LENGTH(RAM)` | 硬編碼位址與 RAM region 定義重複，不一致；改成 expression 確保永遠正確 |
 | 49x：補入 `__StackTop = _estack;` 和 `__HT_check_sp = _estack - _Min_Stack_Size;` | 49x startup 未定義這兩個 symbol；Stack Analysis 面板直接讀 ELF symtab，需直接賦值（不能用 `PROVIDE`）|
 

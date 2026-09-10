@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { semverCmp } from './utils';
 
 export interface FlashLoaderEntry {
   flm:      string;   // FLM basename e.g. "HT32F493x5_EXT_TYPE2_REAMP0_GENERAL.FLM"
@@ -125,6 +126,16 @@ export function readProjectSettings(bgDir: string): ProjectSettings {
       if (s.openocdDebugLevel < 1) { s.openocdDebugLevel = 1; }
       // Migrate removed 'none' erase mode (flash always requires sector erase)
       if (s.eraseMode === 'none') { s.eraseMode = 'erase_sector'; }
+      // Migrate projects generated before 0.2.0: extraCFlags defaulted to ''.
+      // 0.2.0+ defaults to -std=gnu11; back-fill it once and persist.
+      if (!stored.extraCFlags) {
+        let metaVersion = '';
+        try { metaVersion = JSON.parse(fs.readFileSync(path.join(bgDir, 'project.meta.json'), 'utf8')).metaVersion ?? ''; } catch { /* ok */ }
+        if (!metaVersion || semverCmp(metaVersion, '0.2.0') < 0) {
+          s.extraCFlags = '-std=gnu11';
+          try { writeProjectSettings(bgDir, s); } catch { /* non-critical */ }
+        }
+      }
       // Backward compat: old projects wrote meta fields only to build.meta.json
       if (!s.mcu) {
         try {
@@ -182,7 +193,7 @@ export function writeProjectSettings(bgDir: string, s: ProjectSettings, opts?: {
   // Omit flashLoaders when empty unless explicitly requested (e.g. webview save).
   // Key absence = "never configured" → generateTasksAndLaunch will auto-detect SPIM.
   // Key present as [] = user intentionally cleared loaders → skip auto-detect.
-  const toWrite: Record<string, unknown> = { ...s };
+  const toWrite: Record<string, unknown> = { ...s, schemaVersion: '0.2.0' };
   if (!opts?.keepEmptyFlashLoaders &&
       (!Array.isArray(toWrite['flashLoaders']) || (toWrite['flashLoaders'] as unknown[]).length === 0)) {
     delete toWrite['flashLoaders'];

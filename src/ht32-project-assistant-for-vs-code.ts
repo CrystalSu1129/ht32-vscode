@@ -77,7 +77,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const pendingFile = path.join(bgParent(f.uri.fsPath), '.ht32-prebuilt-warnings.json');
     if (fs.existsSync(pendingFile)) {
       try {
-        const warnings: string[] = JSON.parse(fs.readFileSync(pendingFile, 'utf8'));
+        const raw = JSON.parse(fs.readFileSync(pendingFile, 'utf8'));
+        // backward-compat: old format was string[]
+        const warnings: { file: string; projName: string }[] = Array.isArray(raw) && typeof raw[0] === 'string'
+          ? (raw as string[]).map((f: string) => ({ file: f, projName: '' }))
+          : raw;
         applyPrebuiltDiagnostics(warnings);
         fs.unlinkSync(pendingFile);
       } catch { /* non-critical */ }
@@ -724,15 +728,16 @@ function checkWizardExtension(ctx: vscode.ExtensionContext) {
 }
 
 /** Populate the Problems panel with prebuilt-binary warnings. */
-function applyPrebuiltDiagnostics(warnings: string[]) {
+function applyPrebuiltDiagnostics(warnings: { file: string; projName: string }[]) {
   prebuiltDiagCollection.clear();
   if (!warnings.length) { return; }
   const diagMap = new Map<string, vscode.Diagnostic[]>();
-  for (const absPath of warnings) {
+  for (const { file: absPath, projName } of warnings) {
     const uri = vscode.Uri.file(absPath);
+    const projSuffix = projName ? ` Add equivalent .a to project: ${projName}` : '';
     const diag = new vscode.Diagnostic(
       new vscode.Range(0, 0, 0, 0),
-      'Prebuilt binary skipped — Keil-compiled .o is not usable by GNU toolchain. Rebuild from source.',
+      `Prebuilt binary skipped — Keil-compiled, not usable by GNU toolchain.${projSuffix}`,
       vscode.DiagnosticSeverity.Warning
     );
     diag.source = 'HT32 Convert';
@@ -1813,7 +1818,7 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
   // ── 步驟 2：執行轉換（帶 progress notification）──
   const uvDefaultWsName = path.basename(picked,
     picked.toLowerCase().endsWith('.uvmpw') ? '.uvmpw' : '.uvprojx');
-  const allPrebuiltWarnings: string[] = [];
+  const allPrebuiltWarnings: { file: string; projName: string }[] = [];
   const allConvertWarnings: { message: string; file: string; line?: number; col?: number; len?: number }[] = [];
   await withProgress('Convert uVision (.uvprojx / .uvmpw)', async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
@@ -1859,7 +1864,8 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       const outDir = path.join(bgParent(root), dirName);
       const result = await uv2make({ uvprojx: proj.uvprojx, outDir, workspaceRoot: wsOpenRoot, extPath: extensionPath, ...cfgOpts });
       if (result.prebuiltWarnings?.length) {
-        allPrebuiltWarnings.push(...result.prebuiltWarnings);
+        const projName = path.basename(proj.uvprojx, '.uvprojx');
+        allPrebuiltWarnings.push(...result.prebuiltWarnings.map(f => ({ file: f, projName })));
       }
       if (result.conversionWarnings?.length) {
         for (const w of result.conversionWarnings) {
@@ -3373,7 +3379,7 @@ function buildPyocdServerConfigs(params: {
   serverArgs.push('--elf', elfAbsPath);
 
 
-  const PYOCD_READY_REGEX = 'GDB[ -][Ss]erver.*[Ll]istening.*[Pp]ort[: ]+[0-9]+';
+  const PYOCD_READY_REGEX = '[Gg][Dd][Bb].*[Ss]erver.*[Pp]ort[: ]*[0-9]';
 
   const base: Record<string, unknown> = {
     type:                          'cortex-debug',
@@ -4210,8 +4216,8 @@ async function generateTasksAndLaunch(
   writeJsonPretty(path.join(vscodeDir, 'tasks.json'), { version: '2.0.0', tasks: taskList });
   writeJsonPretty(path.join(vscodeDir, 'launch.json'), { version: '0.2.0', configurations });
 
-  // Makefile flags 重新產生
-  await regenAllMakefileFlags(root);
+  // Makefile flags 重新產生（只處理本次已知有 Makefile 的 bgDirs，避免掃到同目錄下其他專案）
+  await regenAllMakefileFlags(root, bgDirs.map(d => ({ name: d, dir: path.join(bgParentDir, d) })));
 }
 
 
