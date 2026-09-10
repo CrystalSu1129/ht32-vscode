@@ -4677,9 +4677,9 @@ function registerTreeEditCommands(
     const fileName = path.basename(absPath);
     const answer = await vscode.window.showWarningMessage(
       `Delete "${fileName}"? This will move it to the recycle bin.`,
-      { modal: true }, 'Delete'
+      { modal: true }, 'Yes'
     );
-    if (answer !== 'Delete') return;
+    if (answer !== 'Yes') return;
 
     try {
       await vscode.workspace.fs.delete(vscode.Uri.file(absPath), { useTrash: true });

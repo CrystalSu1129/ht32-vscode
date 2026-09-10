@@ -14,7 +14,7 @@ export const CHANNEL = vscode.window.createOutputChannel('HT32 uv2make');
 
 /** Minimum heap for Create Project. 64 instead of original 256 — 256 was too large for
  *  small-RAM MCUs (e.g. 2KB RAM), causing significant RAM pressure on new projects. */
-export const MIN_HEAP_SIZE = 64;
+export const MIN_HEAP_SIZE = 0;
 export function enforceMinHeap(heapSize: string | undefined): string | undefined {
   if (heapSize === undefined) return undefined;
   return parseInt(heapSize) < MIN_HEAP_SIZE
