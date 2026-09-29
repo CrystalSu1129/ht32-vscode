@@ -11,6 +11,7 @@ import { openCreateProjectPanel, generateProjectFiles } from './tools/createProj
 import { parseHt32IdeProject, generateMakefile, buildProjectMeta, generateLinkerScript, patchStartupFiles, writeHt32IdeLists, resolveHt32IdePostBuildPath, computeHt32IdeWsRoot, convertHt32IdeProject, Ht32IdeConvertProjectResult } from './tools/ht32ide2make';
 import { StackAnalysisProvider, StackAnalysisTrackerFactory } from './tools/stackAnalysisProvider';
 import { semverCmp } from './tools/utils';
+import { syncAfterBuildBats } from './tools/afterbuildSync';
 
 let extensionPath: string;    // set in activate(), used by generateTasksAndLaunch()
 let extensionVersion = '';    // set in activate(), injected into project.meta.json
@@ -1913,6 +1914,7 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       ramLengthHint:  activeResult?.ramLength,
       spimFlmHint:    activeResult?.spimFlm,
     });
+    runAfterBuildSync(wsOpenRoot);
 
     // Sync auto-detected floatAbi/fpu into settings.json so Settings WebView reflects
     // the actual Makefile values. Done after generateTasksAndLaunch (which creates
@@ -2103,6 +2105,7 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       ramOriginHint:  activeResult?.ramOrigin,
       ramLengthHint:  activeResult?.ramLength,
     });
+    runAfterBuildSync(ideWsOpenRoot);
 
     // Sync floatAbi/fpu into settings.json（同 uVision conversion 邏輯）
     if (activeResult) {
@@ -3523,6 +3526,33 @@ const GCC_PROBLEM_MATCHER = {
     file: 1, line: 2, column: 3, severity: 4, message: 5
   }
 };
+
+function runAfterBuildSync(wsRoot: string): void {
+  const bgParentDir = bgParent(wsRoot);
+  const bgDirs = fs.existsSync(bgParentDir)
+    ? fs.readdirSync(bgParentDir).filter(d => isBgDir(bgParentDir, d))
+    : [];
+  try {
+    const seen = new Set<string>();
+    const updatedNames: string[] = [];
+    for (const bg of bgDirs) {
+      const s = readProjectSettings(path.join(bgParentDir, bg));
+      const cmd = s.postBuildCmd?.trim();
+      if (!cmd) continue;
+      for (const r of syncAfterBuildBats(cmd, wsRoot, extensionPath)) {
+        if (seen.has(r.batPath.toLowerCase())) continue;
+        seen.add(r.batPath.toLowerCase());
+        if (r.message) logInfo(r.message);
+        if (r.action === 'updated') updatedNames.push(path.basename(r.batPath));
+      }
+    }
+    if (updatedNames.length) {
+      vscode.window.showInformationMessage(
+        `afterbuild bat(s) updated: ${updatedNames.join(', ')} (originals backed up as .bak)`
+      );
+    }
+  } catch (e: any) { logError(`afterbuildSync failed: ${e?.message ?? e}`); }
+}
 
 async function generateTasksAndLaunch(
   root: string,

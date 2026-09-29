@@ -3,7 +3,7 @@
 import * as fs   from 'fs';
 import * as path from 'path';
 import { XMLParser } from 'fast-xml-parser';
-import { detectFpuPresentFromHeader, find49xGccDir, fwlRootFromSourcePath, fwlRootFromTemplate, is49xDevice, patchLdStackSections, specsFlags, makeSrcRule, makeSpacedSrcRule, buildMakefileText, enforceMinHeap, generateStackAnalysis, writeCCDbFromLists, logInfo, logWarn, bundledGnuDirFromFwlRoot, FileOption } from './uv2make';
+import { detectFpuPresentFromHeader, find49xGccDir, fwlRootFromSourcePath, fwlRootFromTemplate, is49xDevice, patchLdStackSections, specsFlags, makeSrcRule, makeSpacedSrcRule, buildMakefileText, enforceMinHeap, generateStackAnalysis, writeCCDbFromLists, logInfo, logWarn, bundledGnuDirFromFwlRoot, FileOption, relocateBatToWsRoot } from './uv2make';
 import { readProjectSettings, writeProjectSettings } from './settingsWebview';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -562,14 +562,16 @@ function buildHt32IdePostBuildCmd(
  * Convert the absolute bat path in an HT32-IDE post-build command to a path
  * relative to wsRoot (= HT32_VSCode/, the post-build working directory).
  */
-export function resolveHt32IdePostBuildPath(cmd: string, wsRoot: string): string {
+export function resolveHt32IdePostBuildPath(cmd: string, wsRoot: string, srcRoot?: string): string {
   if (!cmd) return '';
   const m = /^("(?:[^"\\]|\\.)*"|[^\s"]+)([\s\S]*)$/.exec(cmd.trim());
   if (!m) return cmd;
   const rawPathToken = m[1];
   const restArgs     = m[2];
   const rawPath = rawPathToken.startsWith('"') ? rawPathToken.slice(1, -1) : rawPathToken;
-  const relPath = path.relative(wsRoot, rawPath.replace(/\//g, path.sep));  // keep backslashes
+  const batAbs     = rawPath.replace(/\//g, path.sep);
+  const batDestAbs = srcRoot ? relocateBatToWsRoot(batAbs, srcRoot, wsRoot) : batAbs;
+  const relPath    = path.relative(wsRoot, batDestAbs);  // keep backslashes
   const pathToken = relPath.includes(' ') ? `"${relPath}"` : relPath;
   return `${pathToken}${restArgs}`;
 }
@@ -1056,7 +1058,7 @@ export function convertHt32IdeProject(
     ? (result.hardFloat ? 'hard' : 'softfp')
     : (fpuFinal ? 'hard' : 'soft');
   const idePostBuildCmd = result.postBuildCmd
-    ? resolveHt32IdePostBuildPath(result.postBuildCmd, bgParentIde(wsRoot))
+    ? resolveHt32IdePostBuildPath(result.postBuildCmd, bgParentIde(wsRoot), path.dirname(projectDir))
     : undefined;
   const isFirstConvert = !fs.existsSync(path.join(bgDir, 'project.settings.json'));
   const _existingSettings = readProjectSettings(bgDir);

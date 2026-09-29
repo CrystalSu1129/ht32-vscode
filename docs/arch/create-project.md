@@ -89,7 +89,7 @@ HT32: Create Project（ht32.createProject）
 複製後套用以下 patch：
 
 - `"w"` → `"aw",%nobits`（SHF_ALLOC，讓 `--print-memory-usage` 計入 RAM）
-- `Heap_Size = 0` → `MIN_HEAP_SIZE`（確保 malloc 可用）
+- `Heap_Size = 0` 保留不動（`MIN_HEAP_SIZE = 0`，不強制最小值）
 - `patchLdMemory()`：填入 PDSC / Settings.ini 的正確 RAM/Flash 大小，再呼叫 `patchLdStackSections()`
 
 各路徑 patch 函式對照表與 49x heap/stack 設計原則  

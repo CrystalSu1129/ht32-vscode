@@ -31,7 +31,7 @@
 ## Create Project
 | 檔案 | 標準系列（1/4/5xxxx） | 49x 系列（490/491/493） |
 |---|---|---|
-| **startup .s** | FWLib `project_template/IP/Example/GNU_ARM/{startup}.s`，patch `"aw",%nobits` + 最小 Heap；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/`** | FWLib `libraries/cmsis/cm4/device_support/startup/gcc/startup_ht32f49xxx.s`，patch `"aw",%nobits` + 最小 Heap |
+| **startup .s** | FWLib `project_template/IP/Example/GNU_ARM/{startup}.s`，patch `"aw",%nobits`；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/`** | FWLib `libraries/cmsis/cm4/device_support/startup/gcc/startup_ht32f49xxx.s`，patch `"aw",%nobits` |
 | **ht32_op.c / ht32_op2.c** | FWLib `project_template/IP/Example/GNU_ARM/ht32_op*.c`；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/ht32_op*.c`** | — |
 | **linker script** | FWLib `project_template/IP/Example/GNU_ARM/linker.ld`，patch FLASH/RAM 大小；**FWLib 缺失時 fallback 到 bundled `templates/{familyTag}/GNU_ARM/linker.ld`** | FWLib `libraries/cmsis/cm4/device_support/startup/gcc/linker/<chip>_FLASH.ld`，patch KEEP(.heap/.stack) |
 | **driver .c** | FWLib `library/<series>_Driver/src/*.c`（清單來自 `.mk`，全部加入）| FWLib `libraries/drivers/src/*.c`（掃目錄全部複製）|
@@ -118,7 +118,7 @@
 |---|---|
 | `.section ".stack","w"` → `.section ".stack","aw",%nobits` | `SHF_ALLOC`（`a` flag）是 `--print-memory-usage` 計入 RAM 使用量的必要條件；`%nobits` 保持 NOBITS（不佔 ELF 檔案空間） |
 | `.section ".heap","w"` → `.section ".heap","aw",%nobits` | 同上 |
-| `.equ Heap_Size, 0` → `64`（最小 64 bytes）| heap size 為 0 時 `_sbrk` 的 `__HeapLimit` guard 會立即觸發，即使沒有呼叫 `malloc` 也可能造成問題 |
+| `.equ Heap_Size, 0` | 保留原始值，不強制最小值 |
 
 Stack Analysis 面板需要從 ELF symtab 讀取 `__StackTop`（stack 上限）與 `__HT_check_sp`（stack 起點，填魔術值的位置）。標準系列 GCC startup 已內含這兩個 symbol（及 ARM 標準的 `__StackLimit`），不需額外處理；49x GCC startup 只定義 `_estack`，缺少這三個 symbol，因此由 `.ld` patch 補入（見下）。
 

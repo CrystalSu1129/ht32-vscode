@@ -31,7 +31,7 @@
 | [arch/compiler-compat.md](arch/compiler-compat.md) | GCC 版本相容性設計：`--no-warn-rwx-segments` Makefile 動態偵測（`LD_NO_WARN`）、`-std=gnu11` 預設 flag 與 GCC 15 C23 bool 衝突處理 |
 | [arch/rtos.md](arch/rtos.md) | FreeRTOS 自動轉換：port.c / portmacro.h include path RVDS→GCC 替換邏輯、手動處理情境 |
 | [arch/toolchain.md](arch/toolchain.md) | Toolchain 搜尋策略：GCC / Make 搜尋順序、`findArmGccShallow()` shallow scan、`locateMake()` 設計、winget 安裝流程、tasks.json PATH 組成規則 |
-| [arch/postbuild.md](arch/postbuild.md) | Post-Build 指令轉換：Keil「After Make」→ VS Code task `translateKeilPostBuildCmd()`、.bat 自動加 `cmd /c`、Compile / Post-Build / Build compound 結構 |
+| [arch/postbuild.md](arch/postbuild.md) | Post-Build 完整架構：uVision（`extractUvAfterMakeCmd` / `translateKeilPostBuildCmd`）、HT32-IDE（CDT 變數替換 / `resolveHt32IdePostBuildPath`）、`--symdefs` 自動產 `gen_syms_ld.bat`、tasks.json Compile / Post-Build / Build compound 結構、`wrapPostBuildCmd` .bat → `cmd /c` |
 | [arch/PartialLock.md](arch/PartialLock.md) | FLASH Partial Lock — 雙專案 symdefs → .ld 轉換流程（IAP + AP 共用 Flash 分區設計） |
 | [arch/test-scripts.md](arch/test-scripts.md) | 測試腳本說明：`test-mcu.js`（MCU 靜態覆蓋率）、`test-create-project.js`（四層驗證）、`test-compile.js`（轉換+編譯）及其他輔助腳本 |
 
@@ -136,17 +136,15 @@ ht32.vscode.solution/
 
 | 函式 | 所在 | 做什麼 | Convert uV | Conv. HT32-IDE | Create Project |
 |---|---|---|:---:|:---:|:---:|
-| `patchStartupFromKeil` | `uv2make.ts` | 讀 Keil Stack_Size/Heap_Size 同步至 GCC startup；patch `"aw",%nobits`；呼叫 `enforceMinHeap` | 標 | — | — |
-| `patchStartupFiles` | `ht32ide2make.ts` | patch startup `"aw",%nobits`；`enforceMinHeap` 強制最小 heap | — | ✓ | — |
-| `patchStartupHeap` | `createProject.ts` | 若 Heap_Size=0 則強制設成 `MIN_HEAP_SIZE`（確保 malloc 可用） | — | — | ✓ ¹ |
+| `patchStartupFromKeil` | `uv2make.ts` | 讀 Keil Stack_Size/Heap_Size 同步至 GCC startup；patch `"aw",%nobits` | 標 | — | — |
+| `patchStartupFiles` | `ht32ide2make.ts` | patch startup `"aw",%nobits` | — | ✓ | — |
+| `patchStartupHeap` | `createProject.ts` | 若 Heap_Size=0 則設成 `MIN_HEAP_SIZE`（目前 `MIN_HEAP_SIZE = 0`，為 no-op） | — | — | ✓ ¹ |
 | `patchLdStackSections` | `uv2make.ts`（export）| 拆 `._user_heap_stack` → 獨立 `.heap`/`.stack`；加 `KEEP()`（防 `--gc-sections` 丟棄）；加 `__StackTop`/`__HT_check_sp`（Stack Usage Analysis 面板） | ✓ | ✓ | ✓ |
 | `patchLdStackTop` | `uv2make.ts` | 把 `LENGTH(RAM)` 換成 Settings.ini 安全值，避免 _estack 超出內部 SRAM（IAP / 外部 SRAM 場景）| ✓ | — | — |
 | `patchLdMemoryFromInfo` | `uv2make.ts` | 用 uvprojx 解出的 FLASH/RAM 值 patch MEMORY block 的 ORIGIN + LENGTH | ✓ | — | — |
 | `patchLdMemory` | `createProject.ts` | patch FLASH/RAM LENGTH，再呼叫 `patchLdStackSections` | — | — | ✓ |
 
-¹ 49x 系列 FWLib GCC startup 無 `Heap_Size` 符號，`patchStartupHeap` 呼叫後為 no-op；49x Heap 由 `generateLinkerScript` 呼叫 `enforceMinHeap` 後寫入 LD 的 `_Min_Heap_Size`。
-
-> **Heap_Size 政策（三條路徑統一）**：`uv2make.ts` 匯出 `enforceMinHeap()` 與 `MIN_HEAP_SIZE = 0x40`。所有路徑在寫入 startup .s / linker .ld 前均強制 Heap_Size ≥ 0x40，不足時自動調整並發出 warning。GCC newlib-nano `_sbrk()` 在 Heap_Size = 0 時立即失敗（`&_end == &__HeapLimit`），0x40 是讓 printf FILE struct 初始化所需的最小值。
+¹ 49x 系列 FWLib GCC startup 無 `Heap_Size` 符號，`patchStartupHeap` 呼叫後為 no-op；49x Heap 由 `generateLinkerScript` 直接寫入 LD 的 `_Min_Heap_Size`（保留原始值，不強制調整）。
 
 ---
 
@@ -363,7 +361,7 @@ RecentTreeProvider
 
 ### 三大需求
 
-1. **Min Heap**：Create Project 強制 heap ≥ 64 bytes（`MIN_HEAP_SIZE = 0x40`）；Convert uVision / HT32-IDE 保留原始設定，Heap_Size = 0 時只 logWarn（GCC newlib-nano 的 `printf("%f")` 需要 heap，Keil MicroLib 不需要）。
+1. **Heap 保留原始值**：所有路徑（Create Project、Convert uVision、HT32-IDE）均保留 FWLib 原始 Heap_Size，不做最小值強制。
 2. **無雙重分配**：startup `.s` 的 `.space` 和 LD 的 `_Min_Heap_Size` 不能同時分配相同記憶體。
 3. **RAM usage 計算**：`--print-memory-usage` 必須把 heap/stack 計入 RAM。  
    - 需要：startup section flag = `"aw",%nobits`（SHF_ALLOC + SHT_NOBITS）

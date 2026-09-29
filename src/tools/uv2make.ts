@@ -216,6 +216,17 @@ export interface BuildMeta {
   deviceName?: string;  // 例如 "HT32F5828"
 }
 
+export function relocateBatToWsRoot(batAbs: string, srcRoot: string, wsRoot: string): string {
+  if (!batAbs.toLowerCase().endsWith('.bat')) return batAbs;
+  // Only copy if bat is inside the source project directory (e.g. MDK_ARMv5/ or HT32-IDE/)
+  const relFromSrc = path.relative(path.resolve(srcRoot), path.resolve(path.dirname(batAbs)));
+  if (relFromSrc.startsWith('..')) return batAbs;
+  const dest = path.join(path.resolve(wsRoot), path.basename(batAbs));
+  if (fs.existsSync(batAbs) && dest.toLowerCase() !== path.resolve(batAbs).toLowerCase())
+    try { fs.copyFileSync(batAbs, dest); } catch { /* ignore */ }
+  return dest;
+}
+
 /**
  * Extract and translate the AfterMake post-build command from a uvprojx document.
  * Skips fromelf commands (GCC Makefile already produces .bin via objcopy).
@@ -295,8 +306,9 @@ function translateKeilPostBuildCmd(
   const rawPath = rawPathToken.startsWith('"') ? rawPathToken.slice(1, -1) : rawPathToken;
   // Skip bare system commands (no directory component) — e.g. "cmd.exe /C someOtherCmd ..."
   if (!rawPath.includes('/') && !rawPath.includes('\\')) return '';
-  const absPath = path.resolve(projDir, rawPath.replace(/\//g, path.sep));
-  const relPath = path.relative(wsRoot, absPath);  // keep backslashes — cmd.exe needs them
+  const absPath    = path.resolve(projDir, rawPath.replace(/\//g, path.sep));
+  const batDestAbs = relocateBatToWsRoot(absPath, projDir, wsRoot);
+  const relPath    = path.relative(wsRoot, batDestAbs);  // keep backslashes — cmd.exe needs them
   const pathToken = relPath.includes(' ') ? `"${relPath}"` : relPath;
 
   // Extract IC_NAME: 4th token of original command (after bat, mode, @L)
