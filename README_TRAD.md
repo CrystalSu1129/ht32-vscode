@@ -37,7 +37,7 @@ Holtek HT32 系列 Cortex-M 微控制器（M0+/M3/M4）專用 VS Code 擴充功�
 
 > **OpenOCD**：已內建<br>
 > **pyOCD**：首次使用時自動安裝<br>
-> **GCC 工具鏈**：擴充功能啟動時自動偵測；找不到時透過 winget 自動安裝<br>
+> **GCC 工具鏈**：擴充功能啟動時自動偵測；找不到時透過 winget 自動安裝（**需 GCC 8 以上**）<br>
 > **相依擴充功能**：安裝時自動一併安裝 **Cortex-Debug**（除錯介面）與 **Holtek HT32 Configuration Wizard**（[設定精靈](https://marketplace.visualstudio.com/items?itemName=holtek.ht32-config-vscode)）
 
 ---

@@ -37,7 +37,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 
 > **OpenOCD:** Bundled.<br>
 > **pyOCD:** Installed automatically on first use — no manual setup required. Python is not required.<br>
-> **GCC toolchain:** Auto-detected on startup; installed automatically via winget if not found, or set manually in settings.<br>
+> **GCC toolchain:** Auto-detected on startup; installed automatically via winget if not found, or set manually in settings. **GCC 8 or later is required.**<br>
 > **Extension dependencies:** [Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug) and [Holtek Configuration Wizard](https://marketplace.visualstudio.com/items?itemName=holtek.ht32-config-vscode) are installed automatically.
 
 ---

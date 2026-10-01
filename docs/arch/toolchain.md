@@ -112,3 +112,20 @@ await cfg.update('gccPath', s.gccPath || undefined, ConfigurationTarget.Global);
 `writeMakefileToolsSettings` 只在 make 有**完整絕對路徑**時才寫 `makefile.makePath`。
 找不到 make 時刪除此 key（讓 Makefile Tools extension 用它自己的預設值或顯示自己的錯誤）。
 永遠不寫入裸 `"make"`——那會讓 Makefile Tools 在沒有系統 make 的機器上靜默失敗。
+
+## GCC / binutils 最低版本需求
+
+| Flag | 最低版本 | 說明 |
+|------|---------|------|
+| `-mcpu`, `-mthumb`, `-mfpu`, `-mfloat-abi` | GCC 4+ | ARM 基本選項 |
+| `-Os/O0..O3`, `-g/-g3` | GCC 4+ | 最佳化與 debug |
+| `-ffunction-sections`, `-fdata-sections` | GCC 4+ | Dead code elimination |
+| `-std=gnu11` | GCC 4.7+ | C11 |
+| `-flto` | GCC 4.6+ | Link-time optimization |
+| `-mpure-code` | GCC 6+ | Execute-only（Cortex-M） |
+| `-std=c++17` | GCC 7+ | C++17 |
+| `--print-memory-usage` | binutils 2.26（GCC 6 世代） | 編譯後顯示 RAM/Flash 使用量 |
+| `--no-warn-rwx-segments` | binutils 2.39（GCC 12+） | 已有 guard，不支援就不加 |
+| **`-ffile-prefix-map`** | **GCC 8+** | DWARF 路徑正規化，支援移動專案後 debug |
+
+**最嚴格限制為 `-ffile-prefix-map`，因此本 extension 要求 GCC 8 以上。**

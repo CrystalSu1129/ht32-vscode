@@ -2341,8 +2341,8 @@ SIZE    := ${tcPrefix}size
 INCS := $(file <includes.list)
 DEFS := $(file <defines.list)
 ${adefsLine}
-CFLAGS  := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections $(INCS) $(DEFS)${extraCF}${ltoFlag}
-ASFLAGS := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} -x assembler-with-cpp $(INCS) $(DEFS)${adefsInFlags}
+CFLAGS  := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS)${extraCF}${ltoFlag}
+ASFLAGS := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} -x assembler-with-cpp -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS)${adefsInFlags}
 ${p.isLibrary ? '' : `LDFLAGS := ${ldFlags}\n`}
 # ---- Sources (managed by project tree via meta.groups) ----
 SRCS := ${srcsLine}
@@ -3097,7 +3097,7 @@ export function regenerateMakefileFlags(
   const extraLDFParts = [opts.extraLDFlags?.trim(), extraLibsStr, libPathsStr, libNamesStr].filter(Boolean).join(' ');
   const extraLDF = extraLDFParts ? ` ${extraLDFParts}` : '';
 
-  const newCFlags  = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections $(INCS) $(DEFS)${extraCF}${ltoFlag}`;
+  const newCFlags  = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS)${extraCF}${ltoFlag}`;
 
   let content = fs.readFileSync(makefilePath, 'utf8');
 
@@ -3154,7 +3154,7 @@ export function regenerateMakefileFlags(
       fs.writeFileSync(adefPath, '', 'utf8');
     }
   }
-  const newASFlags = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} -x assembler-with-cpp $(INCS) $(DEFS) $(ADEFS)`;
+  const newASFlags = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} -x assembler-with-cpp -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS) $(ADEFS)`;
   const effectiveTarget = (opts.outputName as string | undefined)?.trim() || meta.targetName;
   if (effectiveTarget) {
     content = content.replace(/^TARGET\s*:=.*$/m, `TARGET := ${effectiveTarget}`);

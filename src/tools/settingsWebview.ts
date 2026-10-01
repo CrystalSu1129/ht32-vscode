@@ -1575,8 +1575,9 @@ ${availableFlms.length > 0 ? `<button class="btn-secondary add-btn" onclick="add
 <div class="row">
   <p class="hint" style="margin:0;line-height:1.7">
     <strong>Default flags always included:</strong><br>
-    CFLAGS: <code>-mcpu=… -mthumb -Os -g3 -ffunction-sections -fdata-sections</code> (Optimization / Debug Info are configurable above)<br>
-    LDFLAGS: <code>-Wl,--gc-sections --print-memory-usage -T linker_script.ld --specs=nano.specs --specs=nosys.specs -Wl,--start-group,-lm,-lc,-lgcc,-lnosys -Wl,--end-group</code>
+    CFLAGS: <code>-mcpu=… -mthumb [-mfpu=… -mfloat-abi=…] -Os -g3 -ffunction-sections -fdata-sections -ffile-prefix-map=$(CURDIR)=.</code><br>
+    ASFLAGS: <code>-mcpu=… -mthumb [-mfpu=… -mfloat-abi=…] -x assembler-with-cpp -ffile-prefix-map=$(CURDIR)=.</code><br>
+    LDFLAGS: <code>-Wl,--gc-sections,--print-memory-usage,-Map,build/xxx.map -T GNU_ARM/linker.ld --specs=nano.specs --specs=nosys.specs -Wl,--start-group,-lm,-lc,-lgcc,-lnosys -Wl,--end-group</code>
   </p>
 </div>
 </div>
