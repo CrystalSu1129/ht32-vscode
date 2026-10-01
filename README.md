@@ -309,8 +309,7 @@ Each selected folder is converted into its own folder inside `HT32_VSCode/`, sha
 
 ## Build
 
-- Click **Build** in the HT32 toolbar
-- Or press **Ctrl+Shift+B** to run the default build task directly
+- Click **Build** in the HT32 toolbar, or press **Ctrl+Shift+B**
 
 <img src="media/8.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
@@ -362,7 +361,7 @@ For all related settings, see [Project Settings → Debugger tab](#debugger-tab)
 
 ### Debug
 
-1. Click **Debug** in the HT32 toolbar
+1. Click **Debug** in the HT32 toolbar, or press **Ctrl+Shift+D**
 2. The extension compiles, flashes, and starts debugging
 
 ### Attach Mode (connect to an already-running target)
@@ -370,8 +369,7 @@ For all related settings, see [Project Settings → Debugger tab](#debugger-tab)
 Use this when the target board is already running and you don't need to reflash.
 
 1. Confirm the target board is powered and running
-2. Press **F5** or open Run and Debug (**Ctrl+Shift+D**)
-3. Select **HT32 PyOCD Attach** (or **HT32 OpenOCD Attach**) from the dropdown
+2. Press **F5** and select **HT32 PyOCD Attach** (or **HT32 OpenOCD Attach**) from the dropdown
 
 > Attach does not compile or flash — it connects directly to the running target without resetting it.
 

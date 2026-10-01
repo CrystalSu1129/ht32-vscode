@@ -211,14 +211,9 @@ export async function locateArmGcc(): Promise<string | undefined> {
   return found;
 }
 
-/** 找到後寫進 workspace settings（下次啟動直接走 user 設定，不用再搜尋） */
-export function cacheGccPathToSettings(rootFolder: string, gccPath: string) {
-  updateSettingsJson(rootFolder, undefined, gccPath);
-}
-
 async function _locateArmGccInner(cfg: vscode.WorkspaceConfiguration): Promise<string | undefined> {
   // 1) user 設定
-  const manual = cfg.get<string>('ht32.tools.gccPath') || '';
+  const manual = cfg.get<string>('ht32.gccPath') || '';
   if (manual && fs.existsSync(manual) && await verifyExe(manual, ['--version'], ['arm-none-eabi-gcc'])) {
     logInfo(`use user-configured arm gcc: ${manual}`);
     return manual;
@@ -514,7 +509,9 @@ function updateSettingsJson(root: string, makePath?: string, gccPath?: string) {
     data['ht32.tools.makePath'] = makePath;
   }
   if (gccPath) {
-    data['ht32.tools.gccPath'] = gccPath;
+    const queryDriver = gccPath.replace(/arm-none-eabi-gcc(\.exe)?$/i, 'arm-none-eabi-*');
+    const args: string[] = data['clangd.arguments'] ?? [];
+    data['clangd.arguments'] = [...args.filter((a: string) => !a.startsWith('--query-driver=')), `--query-driver=${queryDriver}`];
   }
 
   // Auto-detect file encoding (Big5, Shift-JIS, …) — set as default, don't override if user changed it
@@ -526,65 +523,6 @@ function updateSettingsJson(root: string, makePath?: string, gccPath?: string) {
   logInfo(`settings.json updated at: ${settingsPath}`);
 }
 
-/* ──────────────────────────────────────
- * OpenOCD 尋找
- * ────────────────────────────────────── */
-
-/**
- * 搜尋 openocd 可執行檔，回傳完整路徑。
- * 優先順序：user settings → PATH → HT32-IDE 安裝位置（xpack-openocd-*）
- */
-export async function locateOpenOcd(): Promise<string | undefined> {
-  const cfg = vscode.workspace.getConfiguration();
-  logInfo('======= locateOpenOcd() START =======');
-
-  // 1) user 設定
-  const manual = cfg.get<string>('ht32.tools.openocdPath') || '';
-  if (manual && fs.existsSync(manual)) {
-    logInfo(`use user-configured openocd: ${manual}`);
-    return manual;
-  }
-
-  // 2) PATH
-  if (process.platform === 'win32') {
-    const { code, stdout } = await execp('where openocd');
-    if (code === 0 && stdout.trim()) {
-      const p = stdout.trim().split(/\r?\n/)[0];
-      logInfo(`locateOpenOcd: found in PATH: ${p}`);
-      return p;
-    }
-  } else {
-    const { code, stdout } = await execp('which openocd');
-    if (code === 0 && stdout.trim()) {
-      logInfo(`locateOpenOcd: found in PATH: ${stdout.trim()}`);
-      return stdout.trim();
-    }
-  }
-
-  // 3) Windows：掃 HT32-IDE xPack 安裝目錄
-  if (process.platform === 'win32') {
-    const xpackRoots = [
-      'C:/Program Files (x86)/Holtek HT32 Series/HT32-IDE/xPack',
-      'C:/Program Files/Holtek HT32 Series/HT32-IDE/xPack',
-    ];
-    for (const xpackRoot of xpackRoots) {
-      if (!fs.existsSync(xpackRoot)) continue;
-      const dirs = fs.readdirSync(xpackRoot)
-        .filter(d => d.startsWith('xpack-openocd-'))
-        .sort((a, b) => semverCmp(b, a));  // newest first
-      for (const d of dirs) {
-        const candidate = path.join(xpackRoot, d, 'bin', 'openocd.exe');
-        if (fs.existsSync(candidate)) {
-          logInfo(`locateOpenOcd: found at ${candidate}`);
-          return candidate;
-        }
-      }
-    }
-  }
-
-  logInfo('locateOpenOcd: openocd not found');
-  return undefined;
-}
 
 /**
  * 根據 openocd 可執行檔路徑，推算 FlashLoader 目錄（HT32 HLM 檔案位置）。

@@ -4,8 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec as cpExec, ExecException, ExecOptions } from 'child_process';
 import { XMLParser } from 'fast-xml-parser';
-import { uv2make, regenerateMakefileFlags, parseUvmpw, generateCompileRuleSection, extractDeviceInfoFromUvprojx, getAllPdscPaths, generateStackAnalysis, buildCCDb, writeCCDbFromLists, buildMakefileText, fwlRootFromSourcePath, patchLinkerScriptRom } from './tools/uv2make';
-import { ensureToolchain, locateArmGcc, locateMake, cacheGccPathToSettings } from './tools/toolchain';
+import { uv2make, regenerateMakefileFlags, parseUvmpw, generateCompileRuleSection, extractDeviceInfoFromUvprojx, getAllPdscPaths, generateStackAnalysis, buildCCDb, writeCCDbFromLists, buildMakefileText, fwlRootFromSourcePath, patchLinkerScriptRom, miscCNeedsRedefine, patchMiscCWeak, ensureStackAnalysisStrong, ensureStackAnalysisWeak } from './tools/uv2make';
+import { ensureToolchain, locateArmGcc, locateMake } from './tools/toolchain';
 import { openSettingsPanel, AutoLoaderEntry, readProjectSettings, writeProjectSettings, scanAdapters } from './tools/settingsWebview';
 import { openCreateProjectPanel, generateProjectFiles } from './tools/createProject';
 import { parseHt32IdeProject, generateMakefile, buildProjectMeta, generateLinkerScript, patchStartupFiles, writeHt32IdeLists, resolveHt32IdePostBuildPath, computeHt32IdeWsRoot, convertHt32IdeProject, Ht32IdeConvertProjectResult } from './tools/ht32ide2make';
@@ -1127,34 +1127,27 @@ function setClangdIntelliSenseProject(root: string, bgName: string) {
 /** 在 workspace root（HT32_VSCode/）內產出 .clangd。
  *  clangd 從 source file 往上找時會在 workspace root 找到，CompilationDatabase 路徑
  *  相對於此檔案位置，不含 HT32_VSCode/ 前綴，避免與 workspace root 解析衝突。
- *  isystem flags 從 .vscode/settings.json 的 --query-driver 反推 GCC 路徑取得。 */
-function ensureClangdAtProjectRoot(root: string, bgName?: string) {
+ *  gccPath 由呼叫端從 resolveToolchain 取得後傳入，推算 toolchain root 取得 isystem flags。 */
+function ensureClangdAtProjectRoot(root: string, bgName?: string, gccPath?: string) {
   try {
 
-    // 從 settings.json 的 --query-driver 取得 GCC 完整路徑
     const isystemFlags: string[] = [];
-    try {
-      const settings = JSON.parse(fs.readFileSync(path.join(root, '.vscode', 'settings.json'), 'utf8'));
-      const args: string[] = settings['clangd.arguments'] ?? [];
-      const qd = args.find((a: string) => a.startsWith('--query-driver='));
-      if (qd) {
-        const gccFull = qd.replace('--query-driver=', '');
-        const toolchainRoot = path.dirname(path.dirname(gccFull));
-        const newlibInc = path.join(toolchainRoot, 'arm-none-eabi', 'include').replace(/\\/g, '/');
-        if (fs.existsSync(newlibInc)) { isystemFlags.push(`-isystem${newlibInc}`); }
-        const gccLibBase = path.join(toolchainRoot, 'lib', 'gcc', 'arm-none-eabi');
-        if (fs.existsSync(gccLibBase)) {
-          const versions = fs.readdirSync(gccLibBase).sort(semverCmp);
-          const ver = versions[versions.length - 1];  // newest
-          if (ver) {
-            const inc = path.join(gccLibBase, ver, 'include').replace(/\\/g, '/');
-            if (fs.existsSync(inc)) { isystemFlags.push(`-isystem${inc}`); }
-            const incFixed = path.join(gccLibBase, ver, 'include-fixed').replace(/\\/g, '/');
-            if (fs.existsSync(incFixed)) { isystemFlags.push(`-isystem${incFixed}`); }
-          }
+    if (gccPath && fs.existsSync(gccPath)) {
+      const toolchainRoot = path.dirname(path.dirname(gccPath));
+      const newlibInc = path.join(toolchainRoot, 'arm-none-eabi', 'include').replace(/\\/g, '/');
+      if (fs.existsSync(newlibInc)) { isystemFlags.push(`-isystem${newlibInc}`); }
+      const gccLibBase = path.join(toolchainRoot, 'lib', 'gcc', 'arm-none-eabi');
+      if (fs.existsSync(gccLibBase)) {
+        const versions = fs.readdirSync(gccLibBase).sort(semverCmp);
+        const ver = versions[versions.length - 1];  // newest
+        if (ver) {
+          const inc = path.join(gccLibBase, ver, 'include').replace(/\\/g, '/');
+          if (fs.existsSync(inc)) { isystemFlags.push(`-isystem${inc}`); }
+          const incFixed = path.join(gccLibBase, ver, 'include-fixed').replace(/\\/g, '/');
+          if (fs.existsSync(incFixed)) { isystemFlags.push(`-isystem${incFixed}`); }
         }
       }
-    } catch { /* settings.json 不存在或無 query-driver，isystem 略過 */ }
+    }
 
     const lines = [
       'CompileFlags:',
@@ -1201,14 +1194,6 @@ function ensureClangdAtFwlibRoot(fwlibRoot: string | undefined) {
   } catch { /* non-critical */ }
 }
 
-/** 查找 arm-none-eabi-gcc：user settings 優先 → 自動偵測 → cache 路徑到 settings。*/
-async function resolveGccPath(root: string): Promise<string | undefined> {
-  const cfg     = vscode.workspace.getConfiguration('ht32');
-  const setting = cfg.get<string>('gccPath', '').trim();
-  const gcc     = setting || await locateArmGcc();
-  if (gcc && !setting) { cacheGccPathToSettings(root, gcc); }
-  return gcc || undefined;
-}
 
 interface ToolchainPaths {
   makePathFull: string | undefined;
@@ -1231,7 +1216,7 @@ async function resolveToolchain(
   const cfg             = vscode.workspace.getConfiguration('ht32');
   const makePathSetting = cfg.get<string>('makePath', '').trim();
   const makePathFull    = makePathSetting || await locateMake(extensionPath);
-  const gccPath         = await resolveGccPath(root);
+  const gccPath         = await locateArmGcc();
 
   if (!makePathFull || !gccPath) {
     const missing = [!gccPath && 'arm-none-eabi-gcc', !makePathFull && 'GNU make'].filter(Boolean).join(', ');
@@ -1255,7 +1240,7 @@ async function resolveToolchain(
  *  從 meta + settings 自動產生 Makefile / sources.list / includes.list / defines.list / compile_commands.json。
  *  .vscode/ 由呼叫端在此之後呼叫 generateTasksAndLaunch() 產出。 */
 async function initProjectsFromMeta(bgDirs: string[], wsRoot: string): Promise<void> {
-  const gccFound = await resolveGccPath(wsRoot);
+  const gccFound = await locateArmGcc();
   const gcc = gccFound ?? 'arm-none-eabi-gcc';
   for (const bgDir of bgDirs) {
     try {
@@ -1330,7 +1315,6 @@ async function autoAttachProjectFromWorkspace(ctx: vscode.ExtensionContext, tree
     })();
     if (hasBuildGen) {
       const _firstBg = (readProjectOrder(parent) ?? fs.readdirSync(parent)).filter(d => isBgDir(parent, d))[0];
-      ensureClangdAtProjectRoot(root, _firstBg);
       // 從 project.meta.json sources 動態推算 FWLib root，產生 FWLib root .clangd
       try {
         const _names = (readProjectOrder(parent) ?? fs.readdirSync(parent)).filter(d => isBgDir(parent, d));
@@ -1432,6 +1416,9 @@ function createProjectCommand(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       const wsOpenRoot  = computeWsOpenRoot(result.projectFolder);
       // elfPath 格式為 "Project_49395/build/xxx.elf"，取第一段即 bgDirName
       const generatedBgDirName = generated.elfPath.split('/')[0] || BG_BASE;
+      const cpBgDir = path.join(bgParent(wsOpenRoot), generatedBgDirName);
+      const cpMeta  = readProjectMeta(cpBgDir);
+      if (cpMeta) { updateProjectMeta(cpBgDir, cpMeta, { skipElfInvalidation: true }); }
 
       await generateTasksAndLaunch(wsOpenRoot, {
         bgDirHint:      generatedBgDirName,
@@ -1510,6 +1497,9 @@ function addNewProjectCommand(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       const generated          = await generateProjectFiles(result, extensionPath);
       const wsOpenRoot         = computeWsOpenRoot(result.projectFolder);
       const generatedBgDirName = generated.elfPath.split('/')[0] || BG_BASE;
+      const cpBgDir2 = path.join(bgParent(wsOpenRoot), generatedBgDirName);
+      const cpMeta2  = readProjectMeta(cpBgDir2);
+      if (cpMeta2) { updateProjectMeta(cpBgDir2, cpMeta2, { skipElfInvalidation: true }); }
 
       await generateTasksAndLaunch(wsOpenRoot, {
         bgDirHint:      generatedBgDirName,
@@ -2007,11 +1997,12 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
           .filter(d => /^Project_/i.test(d))
           .map(d => path.join(dir, d))
           .filter(d => { try { return fs.statSync(d).isDirectory() && isHt32IdeProject(d); } catch { return false; } })
-          .sort()
+          .sort().reverse()
           .forEach(d => { if (!projectDirs.includes(d)) { projectDirs.push(d); } });
       } catch {}
     }
   }
+  projectDirs.sort((a, b) => path.basename(b).localeCompare(path.basename(a)));
 
   if (!projectDirs.length) {
     vscode.window.showErrorMessage(
@@ -2079,10 +2070,9 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     const ideWsOpenRoot = computeWsOpenRoot(activeWsRoot!);
 
     // Write .ht32vs before generateTasksAndLaunch so that Build All order matches TreeView order.
-    // singleParentExpansion: also write one .ht32vs per sub-project (each listing only itself),
+    // For multiple projects: write one .ht32vs per sub-project (each listing only itself),
     // then write (and activate) one merged .ht32vs listing all converted projects.
-    // Any other case: only the merged .ht32vs.
-    if (singleParentExpansion && convResults.length > 1) {
+    if (convResults.length > 1) {
       for (const r of convResults) {
         const subName = path.basename(r.bgDir);
         const projFile = writeOrUpdateProjectFile(bgParent(ideWsOpenRoot), [subName], subName);
@@ -2188,7 +2178,9 @@ function writeMakefileToolsSettings(root: string, makeCmd: string, bgDirs: strin
     ? `\${workspaceFolder}/${bgRel}/${primaryBg}`
     : `\${workspaceFolder}/${primaryBg}`;
   const gccFull = gccPath ? gccPath.replace(/\\/g, '/') : undefined;
-  const queryDriver = gccFull ?? '**/arm-none-eabi-gcc*';
+  const queryDriver = gccFull
+    ? gccFull.replace(/arm-none-eabi-gcc(\.exe)?$/i, 'arm-none-eabi-*')
+    : '**/arm-none-eabi-gcc*';
   data['clangd.arguments'] = [
     `--compile-commands-dir=${ccDir}`,
     `--query-driver=${queryDriver}`,
@@ -3623,6 +3615,9 @@ async function generateTasksAndLaunch(
   // settings.json：需要 bgDirs 才能確定路徑，放在掃描完之後
   await writeMakefileToolsSettings(root, makeExe, bgDirs, gccPath || undefined);
 
+  // .clangd：gcc 路徑已確定，統一在此產生，所有流程（create/open/convert）都經過這裡
+  ensureClangdAtProjectRoot(root, bgDirs[0], gccPath || undefined);
+
   // 把 make dir + gcc dir 都加進 PATH，確保 task 能找到工具
   const extPathFwd = extensionPath.replace(/\\/g, '/');
   const pathDirs: string[] = [];
@@ -4273,6 +4268,13 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
     const bgProjSettings = readProjectSettings(bgDir);
     if (!bgProjSettings.mcu) continue;
     try {
+      const meta = readProjectMeta(bgDir);
+      if (meta) {
+        // per-file rules (--redefine-sym, -mpure-code) + CFLAGS/LDFLAGS + CCDb in one pass
+        updateProjectMeta(bgDir, meta, { skipElfInvalidation: true });
+        continue;
+      }
+      // fallback: no project.meta.json (very old projects), patch CFLAGS/LDFLAGS only
       const buildMeta = {
         targetName: bgProjSettings.targetName ?? bg,
         mcu:        bgProjSettings.mcu,
@@ -4393,15 +4395,27 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
   const makefilePath = path.join(buildGenDir, 'Makefile');
   if (!fs.existsSync(makefilePath)) return;
 
-  // Build per-file extra flags for xo (execute-only) files
+  // Build per-file extra flags — resolve all paths to absolute first to avoid
+  // format mismatches between meta.groups keys and buildRelPaths entries.
   const extraFlagsMap = new Map<string, string>();
+  const xoAbsPaths = new Set<string>();
   if (meta.fileOptions) {
     for (const [metaPath, fo] of Object.entries(meta.fileOptions)) {
       if (!fo.xo) continue;
-      const n  = metaPath.replace(/\\/g, '/');
-      const bp = (relUp + '/' + n).replace(/\/\//g, '/');
-      extraFlagsMap.set(bp, '-mpure-code');
+      xoAbsPaths.add(path.resolve(wsRoot, metaPath.replace(/\\/g, path.sep)));
     }
+  }
+  let stackAnalysisAbsPath: string | undefined;
+  let hasMiscOld = false;
+  for (const bp of buildRelPaths) {
+    const absPath = path.resolve(buildGenDir, bp);
+    if (xoAbsPaths.has(absPath)) extraFlagsMap.set(bp, '-mpure-code');
+    if (miscCNeedsRedefine(absPath)) { hasMiscOld = true; patchMiscCWeak(absPath); }
+    if (/ht32_stack_analysis\.c$/i.test(bp)) { stackAnalysisAbsPath = absPath; }
+  }
+  if (stackAnalysisAbsPath) {
+    if (hasMiscOld) ensureStackAnalysisStrong(stackAnalysisAbsPath);
+    else            ensureStackAnalysisWeak(stackAnalysisAbsPath);
   }
   const { srcsClean, objVarBlock, rulesBlock } = generateCompileRuleSection(buildRelPaths, extraFlagsMap);
 
@@ -4440,12 +4454,18 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
 
   // 4. Fully regenerate the explicit compile rules section
   // Match both Chinese (legacy) and English section headers for backwards compatibility.
+  const oldRulesMatch = mk.match(/(?:# ---- \u70ba\u6bcf\u500b\u6e90\u6587\u4ef6\u751f\u6210\u5c08\u5c6c\u898f\u5247\uff08\u907f\u514d VPATH\uff09 ----|# ---- Per-source explicit rules \(avoids VPATH\) ----)[\s\S]*?(?=# ---- Dirs ----)/);
+  const newRulesSection = `# ---- Per-source explicit rules (avoids VPATH) ----\n${rulesBlock}\n`;
   mk = mk.replace(
     /(?:# ---- \u70ba\u6bcf\u500b\u6e90\u6587\u4ef6\u751f\u6210\u5c08\u5c6c\u898f\u5247\uff08\u907f\u514d VPATH\uff09 ----|# ---- Per-source explicit rules \(avoids VPATH\) ----)[\s\S]*?(?=# ---- Dirs ----)/,
-    `# ---- Per-source explicit rules (avoids VPATH) ----\n${rulesBlock}\n`
+    newRulesSection
   );
 
   fs.writeFileSync(makefilePath, mk);
+
+  if (oldRulesMatch && oldRulesMatch[0] !== newRulesSection) {
+    try { fs.writeFileSync(path.join(buildGenDir, '.needs-rebuild'), '', 'utf8'); } catch {}
+  }
 
   // 5. Rebuild LDFLAGS + elf dependency from meta.linkerScripts[] via shared regenerate.
   //    meta.json was already written at the top of this function, so regenerateMakefileFlags
@@ -4478,7 +4498,7 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
   // 5. Regenerate compile_commands.json so IntelliSense reflects the new file list
   try {
     const bmForCc = readProjectSettings(buildGenDir);
-    const gccForCCDb = vscode.workspace.getConfiguration().get<string>('ht32.tools.gccPath') || undefined;
+    const gccForCCDb = vscode.workspace.getConfiguration('ht32').get<string>('gccPath') || undefined;
     writeCCDbFromLists(buildGenDir, {
       armCore:     bmForCc.mcu || 'cortex-m0plus',
       fpu:         (bmForCc.fpu && bmForCc.fpu !== 'none') ? bmForCc.fpu : undefined,
@@ -5120,11 +5140,8 @@ class ProjectTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         it.id           = `${buildGenDir}::${groupName}::${f}`;
         it.contextValue = f.toLowerCase().endsWith('.ld') ? 'linkerFile' : 'file';
         it.resourceUri  = vscode.Uri.file(path.resolve(fileBase, f));
-        it.tooltip      = f;
-        // Show subdirectory as description (e.g. "board/" for "board/lv_port_disp.c")
-        const dir = path.dirname(f);
+        it.tooltip      = path.resolve(fileBase, f);
         const descParts: string[] = [];
-        if (dir && dir !== '.') descParts.push(dir + '/');
 
         const fo = proj.meta?.fileOptions?.[f];
         if (fo?.exclude) {

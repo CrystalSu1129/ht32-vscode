@@ -125,6 +125,70 @@ Paint watermark 比 session peak 更準確（涵蓋 debug session 開始前的�
 
 > 本專案支援的 MCU 全為 Cortex-M0+ 以上（皆有 VTOR），故不需處理 M0 無 VTOR 的情況；ELF 為主、VTOR 為備援即足夠。
 
+## 舊版 FWLib 相容性修正（source patch）
+
+### 問題
+
+`ht32_cm*_misc.c` 在 **`@date ≤ 2025-12-02`** 的舊版 FWLib 中，GCC 路徑的 `StackUsageAnalysisInit` 使用 `__ASM volatile` 內嵌組語時有 label 重複定義等問題，導致 link 時行為不正確。
+
+Extension 自帶的 `templates/GNU_ARM/ht32_stack_analysis.c` 提供正確實作：
+
+```c
+__attribute__((weak, noinline)) void StackUsageAnalysisInit(u32 addr) { ... }
+```
+
+但 `weak` 只在對手也是 `weak` 時 linker 才會捨棄它；misc.c 提供的是 **strong** symbol，linker 永遠選 misc.c 的壞版本。
+
+### 解決方案：source patch（`weak` 互換）
+
+`updateProjectMeta` 偵測到舊版 misc.c 時，直接修改兩個 source 檔：
+
+| 檔案 | 修改前 | 修改後 |
+|------|--------|--------|
+| user project 的 misc.c | `__attribute__((noinline)) void StackUsageAnalysisInit` | `__attribute__((weak, noinline)) void StackUsageAnalysisInit` |
+| user project 的 ht32_stack_analysis.c | `__attribute__((weak, noinline)) void StackUsageAnalysisInit` | `__attribute__((noinline)) void StackUsageAnalysisInit` |
+
+結果：misc.c 變 weak、ht32_stack_analysis.c 變 strong → linker 選 ht32_stack_analysis.c ✓。clangd 同樣看到 strong symbol 在 ht32_stack_analysis.c，F12 跳到正確檔案 ✓。
+
+**升級 FWLib 後**（舊 misc.c 換成新版）：`updateProjectMeta` 偵測到 misc.c 日期 > 2025-12-02，自動將 ht32_stack_analysis.c 還原為 `weak`，防止 duplicate strong symbol linker error。
+
+> 不修改 `templates/GNU_ARM/ht32_stack_analysis.c`（bundled template），只修改 user project 下的副本。
+
+### 相關函式（`uv2make.ts`）
+
+| 函式 | 用途 |
+|------|------|
+| `miscCNeedsRedefine(absPath)` | 偵測舊版 misc.c（`@date ≤ 2025-12-02`） |
+| `patchMiscCWeak(absPath)` | misc.c 加 `weak`（idempotent） |
+| `ensureStackAnalysisStrong(absPath)` | ht32_stack_analysis.c 移除 `weak`（idempotent） |
+| `ensureStackAnalysisWeak(absPath)` | ht32_stack_analysis.c 還原 `weak`（idempotent） |
+
+### 偵測邏輯（`miscCNeedsRedefine`）
+
+```typescript
+export function miscCNeedsRedefine(absPath: string): boolean {
+  if (!/ht32_cm[0-9a-z+]*_misc\.c$/i.test(absPath)) { return false; }
+  const head = fs.readFileSync(absPath, { encoding: 'utf8' }).slice(0, 1024);
+  const m = head.match(/@date\s+\$Date::\s*(\d{4}-\d{2}-\d{2})/);
+  return !!m && m[1] <= '2025-12-02';
+}
+```
+
+每次 `updateProjectMeta` 即時讀取，不儲存到 `project.meta.json`。
+
+### 涵蓋路徑
+
+均透過 `updateProjectMeta`：
+- uVision / HT32-IDE / Create Project / Open Project 轉換後立刻呼叫
+- TreeView 操作（加入/移除 group/file、toggle xo…）直接呼叫
+- Settings Save → `regenAllMakefileFlags` → 若有 `project.meta.json` 呼叫 `updateProjectMeta`（`skipElfInvalidation: true`）
+
+### `.needs-rebuild` 機制
+
+`updateProjectMeta` 比較舊 rules section 與新 rules section。若有差異（`-mpure-code` 等 per-file flag 變動），寫入 `buildGenDir/.needs-rebuild`，下次 Build 前強制 clean rebuild。
+
+> source patch（`weak` 互換）直接修改 `.c` 檔，make 自動偵測 source 變更並重新編譯，不依賴 `.needs-rebuild`。
+
 ## 未呼叫 `StackUsageAnalysisInit()` 時的行為
 
 Stack analysis 分兩層，`StackUsageAnalysisInit()` 只影響第二層：

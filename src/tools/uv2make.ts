@@ -84,6 +84,55 @@ export type Uv2MakeOptions = {
 export type FileRomOption = { origin: string; length: string };
 export type FileOption    = { exclude?: true; xo?: true; rom?: FileRomOption };
 
+/** Return true if the file is a Holtek misc.c whose StackUsageAnalysisInit GCC path
+ *  is broken (date <= 2025-12-02) and needs to be patched to weak. */
+export function miscCNeedsRedefine(absPath: string): boolean {
+  if (!/ht32_cm[0-9a-z+]*_misc\.c$/i.test(absPath)) { return false; }
+  try {
+    const head = fs.readFileSync(absPath, { encoding: 'utf8', flag: 'r' }).slice(0, 1024);
+    const m = head.match(/@date\s+\$Date::\s*(\d{4}-\d{2}-\d{2})/);
+    return !!m && m[1] <= '2025-12-02';
+  } catch { return false; }
+}
+
+/** Patch old misc.c: add weak to StackUsageAnalysisInit in the GCC branch (idempotent). */
+export function patchMiscCWeak(absPath: string): void {
+  try {
+    const content = fs.readFileSync(absPath, 'utf8');
+    if (/\battribute__\s*\(\s*\(\s*weak/.test(content)) { return; }
+    const patched = content.replace(
+      /(__attribute__\s*\(\s*\(\s*)(noinline\s*\)\s*\)\s*void\s+StackUsageAnalysisInit)/,
+      '$1weak, $2'
+    );
+    if (patched !== content) { fs.writeFileSync(absPath, patched, 'utf8'); }
+  } catch { /* read-only or missing — skip silently */ }
+}
+
+/** Ensure ht32_stack_analysis.c has NO weak on StackUsageAnalysisInit (idempotent). */
+export function ensureStackAnalysisStrong(absPath: string): void {
+  try {
+    const content = fs.readFileSync(absPath, 'utf8');
+    const patched = content.replace(
+      /(__attribute__\s*\(\s*\(\s*)weak,\s*(noinline\s*\)\s*\)\s*void\s+StackUsageAnalysisInit)/,
+      '$1$2'
+    );
+    if (patched !== content) { fs.writeFileSync(absPath, patched, 'utf8'); }
+  } catch { }
+}
+
+/** Ensure ht32_stack_analysis.c has weak on StackUsageAnalysisInit (idempotent). */
+export function ensureStackAnalysisWeak(absPath: string): void {
+  try {
+    const content = fs.readFileSync(absPath, 'utf8');
+    if (/\battribute__\s*\(\s*\(\s*weak/.test(content)) { return; }
+    const patched = content.replace(
+      /(__attribute__\s*\(\s*\(\s*)(noinline\s*\)\s*\)\s*void\s+StackUsageAnalysisInit)/,
+      '$1weak, $2'
+    );
+    if (patched !== content) { fs.writeFileSync(absPath, patched, 'utf8'); }
+  } catch { }
+}
+
 type Extracted = {
   projectName: string;
   targetName: string;
@@ -3161,7 +3210,7 @@ export function regenerateMakefileFlags(
  */
 export function generateCompileRuleSection(
   buildRelPaths: string[],
-  extraFlagsMap?: Map<string, string>
+  extraFlagsMap?: Map<string, string>,
 ): {
   srcsClean: string;
   objVarBlock: string;  // "# Space-path ...\nOBJ_SPACED := ...\n" + "OBJ := ..."  or just "OBJ := ..."
@@ -3184,9 +3233,9 @@ export function generateCompileRuleSection(
   const objVarBlock = objSpacedPrefix + objLine;
 
   const cRules = cleanSrcs.filter(s => s.endsWith('.c')).map(src => {
-    const norm  = src.replace(/\\/g, '/');
-    const obj   = `$(BUILD)/${norm.replace(/\.\.\//g, 'up/').replace(/\.c$/, '.o')}`;
-    const extra = extraFlagsMap?.get(norm) ? ` ${extraFlagsMap.get(norm)}` : '';
+    const norm    = src.replace(/\\/g, '/');
+    const obj     = `$(BUILD)/${norm.replace(/\.\.\//g, 'up/').replace(/\.c$/, '.o')}`;
+    const extra   = extraFlagsMap?.get(norm) ? ` ${extraFlagsMap.get(norm)}` : '';
     return `\n${obj}: ${norm} | prepdir\n\t-@$(call MKDIR_P,$(dir $@))\n\t@echo CC  ${norm}\n\t@"$(CC)" $(CFLAGS)${extra} -MMD -MP -MF "$(@:.o=.d)" -c "${norm}" -o "$@"`;
   }).join('\n');
 
