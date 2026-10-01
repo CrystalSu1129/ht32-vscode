@@ -722,7 +722,8 @@ function buildHtml(
   }
   .settings-group { background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 5px; padding: 12px 14px; margin-bottom: 12px; }
   .row { display: flex; flex-direction: column; margin-bottom: 10px; }
-  label { font-size: 0.83em; color: var(--vscode-descriptionForeground); margin-bottom: 3px; }
+  label { font-size: 0.83em; color: var(--vscode-foreground); margin-bottom: 3px; font-weight: 700; }
+  .checkbox-label, .checkbox-row { color: var(--vscode-descriptionForeground); font-weight: normal; }
   input[type="text"], select {
     background: var(--vscode-input-background); color: var(--vscode-input-foreground);
     border: 1px solid var(--vscode-input-border, #555);
