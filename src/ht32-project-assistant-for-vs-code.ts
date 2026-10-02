@@ -98,7 +98,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         const warnings: { message: string; file: string; line?: number; col?: number; len?: number }[] = JSON.parse(fs.readFileSync(pendingFile, 'utf8'));
         applyConvertDiagnostics(warnings);
         fs.unlinkSync(pendingFile);
-        vscode.commands.executeCommand('workbench.panel.markers.view.focus');
+        setTimeout(() => vscode.commands.executeCommand('workbench.panel.markers.view.focus'), 1000);
       } catch { /* non-critical */ }
       break;
     }
@@ -1952,13 +1952,17 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
       try { fs.writeFileSync(pendingFile, JSON.stringify(allPrebuiltWarnings)); } catch {}
     }
     applyConvertDiagnostics(allConvertWarnings);
-    if (allConvertWarnings.length) {
-      const pendingFile = path.join(bgParent(wsOpenRoot), '.ht32-convert-warnings.json');
-      try { fs.writeFileSync(pendingFile, JSON.stringify(allConvertWarnings)); } catch {}
-    }
-
     const _curRoot2 = currentWsRoot();
-    if (!_curRoot2 || path.resolve(_curRoot2) !== path.resolve(wsOpenRoot)) {
+    const needsReload2 = !_curRoot2 || path.resolve(_curRoot2) !== path.resolve(wsOpenRoot);
+    if (allConvertWarnings.length) {
+      if (needsReload2) {
+        const pendingFile = path.join(bgParent(wsOpenRoot), '.ht32-convert-warnings.json');
+        try { fs.writeFileSync(pendingFile, JSON.stringify(allConvertWarnings)); } catch {}
+      } else {
+        setTimeout(() => vscode.commands.executeCommand('workbench.panel.markers.view.focus'), 300);
+      }
+    }
+    if (needsReload2) {
       await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(wsOpenRoot));
     }
   });
@@ -2131,13 +2135,17 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     try { await tree.expandAll(treeView); } catch {}
 
     applyConvertDiagnostics(ideConvertWarnings);
-    if (ideConvertWarnings.length) {
-      const pendingFile = path.join(bgParent(ideWsOpenRoot), '.ht32-convert-warnings.json');
-      try { fs.writeFileSync(pendingFile, JSON.stringify(ideConvertWarnings)); } catch {}
-    }
-
     const _curRoot3 = currentWsRoot();
-    if (!_curRoot3 || path.resolve(_curRoot3) !== path.resolve(ideWsOpenRoot)) {
+    const needsReload3 = !_curRoot3 || path.resolve(_curRoot3) !== path.resolve(ideWsOpenRoot);
+    if (ideConvertWarnings.length) {
+      if (needsReload3) {
+        const pendingFile = path.join(bgParent(ideWsOpenRoot), '.ht32-convert-warnings.json');
+        try { fs.writeFileSync(pendingFile, JSON.stringify(ideConvertWarnings)); } catch {}
+      } else {
+        setTimeout(() => vscode.commands.executeCommand('workbench.panel.markers.view.focus'), 300);
+      }
+    }
+    if (needsReload3) {
       await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(ideWsOpenRoot));
     }
   });
@@ -3355,10 +3363,11 @@ function buildPyocdServerConfigs(params: {
   gdbPath:          string | undefined;
   serverpath:       string | undefined;  // absolute path to pyocd.exe; undefined = use PATH
   debugBuildTask:   string;
+  cwd:              string;
 }): [object, object] {
   const { configName, attachName, bgExecutable, elfAbsPath, bgTargetId, bgSvdEntry,
           packPaths, pyocdYamlRef, adapterSerial, adapterSpeed,
-          debugLevel, gdbPath, serverpath, debugBuildTask } = params;
+          debugLevel, gdbPath, serverpath, debugBuildTask, cwd } = params;
 
   const serverArgs: string[] = ['-t', bgTargetId];
   for (const p of packPaths) { serverArgs.push('--pack', p); }
@@ -3382,7 +3391,7 @@ function buildPyocdServerConfigs(params: {
     overrideGDBServerStartedRegex: PYOCD_READY_REGEX,
     showDevDebugOutput:            'raw',
     internalConsoleOptions:        'neverOpen',
-    cwd:                           '${workspaceFolder}',
+    cwd:                           cwd,
     executable:                    bgExecutable,
     ...bgSvdEntry,
     ...(serverpath ? { serverpath } : {}),
@@ -3443,10 +3452,11 @@ function buildOpenocdServerConfigs(params: {
   gdbPath:         string | undefined;
   debugBuildTask:  string;
   rtos?:           string;
+  cwd:             string;
 }): [object, object] {
   const { configName, attachName, bgExecutable, bgDeviceFinal, bgSvdEntry,
           bgConfigFiles, bgPreConfigCmds, bgServerArgs, openocdExe, gdbPath,
-          debugBuildTask, rtos } = params;
+          debugBuildTask, rtos, cwd } = params;
 
   const adapterCmds = bgPreConfigCmds.filter(c => c.startsWith('adapter '));
   const hlmCmds     = bgPreConfigCmds.filter(c => !c.startsWith('adapter '));
@@ -3461,7 +3471,7 @@ function buildOpenocdServerConfigs(params: {
     overrideGDBServerStartedRegex: OCD_READY_SENTINEL,
     showDevDebugOutput:            'raw',
     internalConsoleOptions:        'neverOpen',
-    cwd:                           '${workspaceFolder}',
+    cwd:                           cwd,
     executable:                    bgExecutable,
     device:                        bgDeviceFinal,
     ...bgSvdEntry,
@@ -4001,6 +4011,7 @@ async function generateTasksAndLaunch(
         gdbPath,
         serverpath:     pyocdServerPath,
         debugBuildTask: debugPreLaunchLabel(bg),
+        cwd:            bgCwdOf(bg),
       });
       configurations.push(debugCfg, attachCfg);
     } else if (projSettings.serverType === 'openocd') {
@@ -4017,6 +4028,7 @@ async function generateTasksAndLaunch(
         gdbPath,
         debugBuildTask: debugPreLaunchLabel(bg),
         rtos:           bgRtos,
+        cwd:            bgCwdOf(bg),
       });
       configurations.push(debugCfg, attachCfg);
     } else if (projSettings.serverType === 'external') {
@@ -4034,7 +4046,7 @@ async function generateTasksAndLaunch(
         gdbTarget: 'localhost:3333',
         showDevDebugOutput: 'raw',
         internalConsoleOptions: 'neverOpen',
-        cwd: '${workspaceFolder}',
+        cwd: bgCwdOf(bg),
         executable: bgExecutable,
         device: bgDeviceFinal,
         runToEntryPoint: 'main',
@@ -4061,7 +4073,7 @@ async function generateTasksAndLaunch(
         gdbTarget: 'localhost:3333',
         showDevDebugOutput: 'raw',
         internalConsoleOptions: 'neverOpen',
-        cwd: '${workspaceFolder}',
+        cwd: bgCwdOf(bg),
         executable: bgExecutable,
         device: bgDeviceFinal,
         ...bgSvdEntry,
@@ -4101,6 +4113,7 @@ async function generateTasksAndLaunch(
         gdbPath,
         debugBuildTask: debugPreLaunchLabel(bg),
         rtos:           bgRtos,
+        cwd:            bgCwdOf(bg),
       });
       configurations.push(debugCfg, attachCfg);
     }
@@ -4154,7 +4167,7 @@ async function generateTasksAndLaunch(
         'init',
         'reset halt',
         ...(isChipErase ? ['ht_flash erase_chip'] : []),
-        `ht_flash write_image${isChipErase ? '' : ' erase'} ${bgElfForDl}`,
+        `ht_flash write_image${isChipErase ? '' : ' erase'} {${bgElfForDl}}`,
         'reset run',
         'exit',
       ];

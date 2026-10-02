@@ -699,9 +699,7 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
       const metaKey = normalize(path.join(projFolderName, rel));
       metaFileOptions[metaKey] = opt;
       if (opt.exclude) {
-        const base = path.basename(rel);
-        logWarn(`File excluded from build (IncludeInBuild=0): ${base}`);
-        convWarnings.push({ message: `"${base}" is excluded from build (Keil IncludeInBuild=0)`, file: metaKey });
+        logInfo(`File excluded from build: ${path.basename(rel)}`);
       }
       if (opt.xo)  logInfo(`File set to execute-only (-mpure-code): ${path.basename(rel)}`);
       if (opt.rom) logInfo(`File assigned to ROM region ${opt.rom.origin}: ${path.basename(rel)}`);
@@ -2153,7 +2151,7 @@ function writeLists(outDir: string, info: Extracted) {
 }
 
 function guessLinkerFlags(linkerScripts: string[] = ['../GNU_ARM/linker.ld']): string {
-  const tFlags = linkerScripts.map(s => `-T ${s}`).join(' ');
+  const tFlags = linkerScripts.map(s => `-T "${s}"`).join(' ');
   return `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${tFlags}`;
 }
 
@@ -2286,7 +2284,7 @@ export function buildMakefileText(p: UnifiedMakefileParams): string {
   const adefsLine    = `ADEFS := $(file <adefines.list)\n`;
   const adefsInFlags = ' $(ADEFS)';
 
-  const ldTFlags   = p.linkerScripts.map(s => `-T ${s}`).join(' ');
+  const ldTFlags   = p.linkerScripts.map(s => `-T "${s}"`).join(' ');
   const ldDepList  = p.linkerScripts.join(' ');
   const ldFlags    = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(p.useNano ?? true, p.useNosys ?? true)}${extraLDFStr}${ltoFlag}${printfF}${scanfF}`;
 
@@ -2341,8 +2339,8 @@ SIZE    := ${tcPrefix}size
 INCS := $(file <includes.list)
 DEFS := $(file <defines.list)
 ${adefsLine}
-CFLAGS  := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS)${extraCF}${ltoFlag}
-ASFLAGS := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} -x assembler-with-cpp -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS)${adefsInFlags}
+CFLAGS  := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${extraCF}${ltoFlag}
+ASFLAGS := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} -x assembler-with-cpp "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${adefsInFlags}
 ${p.isLibrary ? '' : `LDFLAGS := ${ldFlags}\n`}
 # ---- Sources (managed by project tree via meta.groups) ----
 SRCS := ${srcsLine}
@@ -2541,8 +2539,8 @@ export function writeCCDbFromLists(bgDir: string, opts: {
   const isystemPaths = gccFull ? computeIsystemPaths(gccFull) : undefined;
   const read = (file: string) => fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 
-  const includes = [...read(path.join(bgDir, 'includes.list')).matchAll(/-I"?([^"\s]+)"?/g)]
-    .map(m => path.resolve(bgDir, m[1]).replace(/\\/g, '/'));
+  const includes = [...read(path.join(bgDir, 'includes.list')).matchAll(/-I(?:"([^"]+)"|(\S+))/g)]
+    .map(m => path.resolve(bgDir, m[1] ?? m[2]).replace(/\\/g, '/'));
   const defines  = [
     ...[...read(path.join(bgDir, 'defines.list')).matchAll(/-D([^\s]+)/g)].map(m => m[1]),
     ...[...read(path.join(bgDir, 'adefines.list')).matchAll(/-D([^\s]+)/g)].map(m => m[1]),
@@ -3097,7 +3095,7 @@ export function regenerateMakefileFlags(
   const extraLDFParts = [opts.extraLDFlags?.trim(), extraLibsStr, libPathsStr, libNamesStr].filter(Boolean).join(' ');
   const extraLDF = extraLDFParts ? ` ${extraLDFParts}` : '';
 
-  const newCFlags  = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS)${extraCF}${ltoFlag}`;
+  const newCFlags  = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${extraCF}${ltoFlag}`;
 
   let content = fs.readFileSync(makefilePath, 'utf8');
 
@@ -3110,8 +3108,8 @@ export function regenerateMakefileFlags(
     logWarn(`regenerateMakefileFlags: failed to read project.meta.json: ${e?.message ?? e}; falling back to -T linker_script.ld (linker flags may be incorrect)`);
   }
   const ldTFlags = linkerScripts.length > 0
-    ? linkerScripts.map(s => `-T ${s}`).join(' ')
-    : '-T linker_script.ld';
+    ? linkerScripts.map(s => `-T "${s}"`).join(' ')
+    : '-T "linker_script.ld"';
 
   const newLDFlags = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(opts.useNano, opts.useNosys)}${extraLDF}${ltoFlag}${printfF}${scanfF}`;
 
@@ -3154,7 +3152,7 @@ export function regenerateMakefileFlags(
       fs.writeFileSync(adefPath, '', 'utf8');
     }
   }
-  const newASFlags = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} -x assembler-with-cpp -ffile-prefix-map=$(CURDIR)=. $(INCS) $(DEFS) $(ADEFS)`;
+  const newASFlags = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} -x assembler-with-cpp "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS) $(ADEFS)`;
   const effectiveTarget = (opts.outputName as string | undefined)?.trim() || meta.targetName;
   if (effectiveTarget) {
     content = content.replace(/^TARGET\s*:=.*$/m, `TARGET := ${effectiveTarget}`);

@@ -470,8 +470,7 @@ export function parseHt32IdeProject(projectDir: string): Ht32IdeResult {
     const isExcluded    = excludedPaths.has(key);
     const isExecuteOnly = executeOnlyPaths.has(key);
     if (isExcluded) {
-      logWarn(`File excluded from build: ${path.basename(s.absPath)}`);
-      extraWarnings.push({ message: `"${path.basename(s.absPath)}" is excluded from build (HT32-IDE)`, file: cprojectPath });
+      logInfo(`File excluded from build: ${path.basename(s.absPath)}`);
     }
     if (isExecuteOnly) {
       logInfo(`File set to execute-only (-mpure-code): ${path.basename(s.absPath)}`);

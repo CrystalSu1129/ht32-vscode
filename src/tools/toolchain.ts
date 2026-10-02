@@ -40,7 +40,7 @@ async function verifyExe(exe: string, args: string[], mustIncludes: string[]): P
   const joined = args.join(' ');
   const cmd = process.platform === 'win32'
     ? `cmd /c "${exe}" ${joined}`
-    : `${exe} ${joined}`;
+    : `"${exe}" ${joined}`;
 
   const { code, stdout, stderr } = await execp(cmd);
   if (code !== 0) return false;
