@@ -91,16 +91,16 @@ async function whereAll(cmd: string): Promise<string[]> {
 
 /** 跨平台尋找 make（只吃 MSYS2 / Git / MinGW；排除 GnuWin32 / Cygwin） */
 export async function locateMake(extensionPath?: string): Promise<string | undefined> {
-  const cfg = vscode.workspace.getConfiguration();
   logInfo('======= locateMake() START =======');
   logInfo(`platform = ${process.platform}`);
 
-  // 1) user 設定優先
-  const manual = cfg.get<string>('ht32.tools.makePath') || '';
-  if (manual && fs.existsSync(manual) && await isGnuMake(manual)) {
-    logInfo(`use user-configured make: ${manual}`);
-    return manual;
-  }
+  // 1) user 設定 — 暫時停用：make 未開放給 user 設定，且 bundled 4.4.1 保證
+  //    --output-sync=line 可用；開放 user 設定時需同步檢查版本 ≥ 4.0。
+  // const manual = cfg.get<string>('ht32.makePath') || '';
+  // if (manual && fs.existsSync(manual) && await isGnuMake(manual)) {
+  //   logInfo(`use user-configured make: ${manual}`);
+  //   return manual;
+  // }
 
   // 2) Windows：優先用 bundled make（保證 GNU Make 4.4，支援 $(file <...)）
   //    不掃系統，避免找到不支援 $(file <...) 語法的舊版本
@@ -506,7 +506,7 @@ function updateSettingsJson(root: string, makePath?: string, gccPath?: string) {
   }
 
   if (makePath) {
-    data['ht32.tools.makePath'] = makePath;
+    data['ht32.makePath'] = makePath;
   }
   if (gccPath) {
     const queryDriver = gccPath.replace(/arm-none-eabi-gcc(\.exe)?$/i, 'arm-none-eabi-*');

@@ -2,6 +2,39 @@
 Holtek HT32 VS Code Extension — Revision History
 ================================================================================
 
+v0.2.3  (from v0.2.0)
+--------------------------------------------------------------------------------
+
+新功能
+- Afterbuild .bat 自動同步：Convert uVision / HT32-IDE 後，若專案 Post-build Command 指向
+  afterbuild.bat / afterbuild_ap.bat / afterbuild_iap.bat / dfumaker_combo.bat /
+  srec_make_combo.bat，自動比對 extension 內建版本的 $Rev 號；
+  若內建版本較新（且 $Rev 未超過允許上限），自動替換並將原檔備份為 .bak
+  允許上限（MAX_REPLACEABLE_REV）：afterbuild 435 / afterbuild_ap 437 /
+  afterbuild_iap 358 / dfumaker_combo 359 / srec_make_combo 527
+- Stack Analysis：misc.c weak symbol 衝突自動修補（patchMiscCWeak）
+  偵測到 misc.c 含舊版 USART_Configuration / HT32_DVB_USBConnect 強符號時，
+  自動加 __attribute__((weak))，讓 ht32_stack_analysis.c 的版本可覆蓋
+- clangd `--query-driver` pattern 從單一 gcc 可執行路徑改為 `arm-none-eabi-*`，
+  涵蓋同目錄所有工具（objcopy、objdump 等），修正部分環境 IntelliSense 無法啟動的問題
+- clangd `-isystem` 路徑改由 gccPath 直接推算（不再從 clangd.arguments 反推），
+  確保 convert / create project 都能正確產生 include 路徑
+
+修正
+- CFLAGS / ASFLAGS 加入 `-ffile-prefix-map=$(CURDIR)=.`：
+  移除 debug info 中的絕對路徑前綴，讓相同 source 在不同機器 build 出一致的 debug info；
+  `-T <linker_script>` 及 `-ffile-prefix-map` 加引號，修正路徑含空格時 build / regenerate 失敗
+- Convert 後自動切換到 Problems panel（含 prebuilt binary 跳過警告）：
+  prebuilt 與 convert warnings 的 pending file 統一只在需要 reload 時寫入，
+  避免 pending file 殘留被下次開啟時誤顯示
+- Debug config cwd 修正為各 Project 目錄（bgCwdOf）而非固定 workspaceFolder，
+  多專案下各 Project 的 GDB server 工作目錄正確
+- OpenOCD `ht_flash write_image` 路徑改用 TCL `{...}` 括起，修正路徑含空格時燒錄失敗
+- Excluded from build 檔案不再顯示為 Problems panel 警告（改為 Output Channel log only）
+- include path regex 修正：includes.list 同時支援 `-I"path"` 與 `-Ipath` 兩種格式
+
+================================================================================
+
 v0.2.0 摘要
 --------------------------------------------------------------------------------
 
