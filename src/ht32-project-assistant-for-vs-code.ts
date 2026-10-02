@@ -85,6 +85,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
           : raw;
         applyPrebuiltDiagnostics(warnings);
         fs.unlinkSync(pendingFile);
+        setTimeout(() => vscode.commands.executeCommand('workbench.panel.markers.view.focus'), 1000);
       } catch { /* non-critical */ }
       break;  // only one pending file expected
     }
@@ -1943,24 +1944,22 @@ async function convertUvision(ctx: vscode.ExtensionContext, tree: ProjectTreePro
 
     try { await tree.expandAll(treeView); } catch {}
 
-    // Apply prebuilt diagnostics BEFORE ensureWorkspaceAt — if the workspace changes,
-    // VSCode reloads the window and any code after withProgress never executes.
-    // We also persist to a file so activate() can restore them after a reload.
     applyPrebuiltDiagnostics(allPrebuiltWarnings);
-    if (allPrebuiltWarnings.length) {
-      const pendingFile = path.join(bgParent(root), '.ht32-prebuilt-warnings.json');
-      try { fs.writeFileSync(pendingFile, JSON.stringify(allPrebuiltWarnings)); } catch {}
-    }
     applyConvertDiagnostics(allConvertWarnings);
     const _curRoot2 = currentWsRoot();
     const needsReload2 = !_curRoot2 || path.resolve(_curRoot2) !== path.resolve(wsOpenRoot);
-    if (allConvertWarnings.length) {
-      if (needsReload2) {
+    const hasAnyDiag2 = allPrebuiltWarnings.length > 0 || allConvertWarnings.length > 0;
+    if (needsReload2) {
+      if (allPrebuiltWarnings.length) {
+        const pendingFile = path.join(bgParent(wsOpenRoot), '.ht32-prebuilt-warnings.json');
+        try { fs.writeFileSync(pendingFile, JSON.stringify(allPrebuiltWarnings)); } catch {}
+      }
+      if (allConvertWarnings.length) {
         const pendingFile = path.join(bgParent(wsOpenRoot), '.ht32-convert-warnings.json');
         try { fs.writeFileSync(pendingFile, JSON.stringify(allConvertWarnings)); } catch {}
-      } else {
-        setTimeout(() => vscode.commands.executeCommand('workbench.panel.markers.view.focus'), 300);
       }
+    } else if (hasAnyDiag2) {
+      setTimeout(() => vscode.commands.executeCommand('workbench.panel.markers.view.focus'), 300);
     }
     if (needsReload2) {
       await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(wsOpenRoot));
