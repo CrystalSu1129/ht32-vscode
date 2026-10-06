@@ -74,7 +74,7 @@ function syncOneBat(
   const bundledPath    = path.join(afterbuildDir, bundledName);
   const bundledContent = fs.readFileSync(bundledPath, 'utf8');
 
-  // Case a: file doesn't exist → copy
+  // Case a: file doesn't exist → copy from bundled
   if (!fs.existsSync(batAbs)) {
     fs.mkdirSync(path.dirname(batAbs), { recursive: true });
     fs.writeFileSync(batAbs, bundledContent);

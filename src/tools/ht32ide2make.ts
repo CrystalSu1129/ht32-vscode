@@ -445,14 +445,11 @@ function parseCProjectFile(cprojectPath: string, buildDir: string): Omit<Ht32Ide
  * @param projectDir  Absolute path to the folder containing .project / .cproject.
  */
 export function parseHt32IdeProject(projectDir: string): Ht32IdeResult {
-  // _CreateProjectScript.bat saves the current .project to original.project as a backup,
-  // then rebuilds .project from a minimal template (skipping user sources if
-  // _ProjectSource_ht32ide.ini is absent). So original.project is the fully-populated
-  // version. Prefer it when it exists.
+  // .project is the user's current project file; original.project is a backup created by
+  // _CreateProjectScript.bat. Always prefer .project — it reflects the current project state.
+  const dotProject      = path.join(projectDir, '.project');
   const originalProject = path.join(projectDir, 'original.project');
-  const projectPath  = fs.existsSync(originalProject)
-    ? originalProject
-    : path.join(projectDir, '.project');
+  const projectPath     = fs.existsSync(dotProject) ? dotProject : originalProject;
   const cprojectPath = path.join(projectDir, '.cproject');
 
   // HT32-IDE build output dir is always "<project>/HT32" — used to resolve

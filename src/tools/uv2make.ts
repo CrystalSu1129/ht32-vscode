@@ -684,7 +684,6 @@ export async function uv2make(opts: Uv2MakeOptions): Promise<Uv2MakeResult> {
     const ldAbsPath = path.resolve(outDirAbs, ldRelPath);
     (metaGroups['Linker'] ??= []).push(normalize(path.relative(projectRoot, ldAbsPath)));
   }
-
   // Extension-added sources (syscalls, retarget, stack_analysis) go into a visible 'vscode'
   // group — these files are added for GNU/VS Code toolchain and were not in the original project.
   if (implicitSourcesRel.length > 0) {

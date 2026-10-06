@@ -2,6 +2,30 @@
 Holtek HT32 VS Code Extension — Revision History
 ================================================================================
 
+v0.2.4  (from v0.2.3)
+--------------------------------------------------------------------------------
+
+新功能
+- 新增 `HT32: Regenerate Makefile` 命令（Command Palette）：
+  從 project.meta.json + project.settings.json 重新產生 Makefile，
+  無需重新 Convert；用於 Makefile 損壞或格式過舊的復原。
+  多專案時顯示 QuickPick 選擇目標；Makefile 遺失的 Project 也可正常選取。
+
+修正
+- HT32-IDE 轉換：改為永遠優先讀取 .project（使用者當前專案檔），
+  只在 .project 不存在時才 fallback 到 original.project（舊備份）；
+  修正因 original.project 為舊版備份導致後來新增的 ht32_op2.c 在轉換後消失的問題
+- updateProjectMeta 在 Makefile 缺少 `# ---- Dirs ----` sentinel 時
+  從靜默無效改為顯示警告，提示使用者執行 `HT32: Regenerate Makefile`
+- generateTasksAndLaunch 工具鏈安裝完成後的遞迴呼叫改以 isRetry flag 限制深度，
+  避免工具鏈安裝失敗時無限遞迴
+- resolveToolchain 加入 _toolchainInstallPromise 防護，多個並發呼叫時
+  只顯示一次「toolchain not found」通知，避免重複彈窗
+- toolchain.ts：clangd.arguments 讀取改用 Array.isArray 防禦，
+  避免 settings.json 中該值為非陣列型別時 spread 報錯
+
+================================================================================
+
 v0.2.3  (from v0.2.0)
 --------------------------------------------------------------------------------
 

@@ -510,7 +510,7 @@ function updateSettingsJson(root: string, makePath?: string, gccPath?: string) {
   }
   if (gccPath) {
     const queryDriver = gccPath.replace(/arm-none-eabi-gcc(\.exe)?$/i, 'arm-none-eabi-*');
-    const args: string[] = data['clangd.arguments'] ?? [];
+    const args: string[] = Array.isArray(data['clangd.arguments']) ? data['clangd.arguments'] : [];
     data['clangd.arguments'] = [...args.filter((a: string) => !a.startsWith('--query-driver=')), `--query-driver=${queryDriver}`];
   }
 

@@ -320,6 +320,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand('ht32.convertHt32Ide', () => convertHt32Ide(ctx, tree, treeView)),
     vscode.commands.registerCommand('ht32.generateTasksLaunch', () => generateTasksLaunchCommand()),
     vscode.commands.registerCommand('ht32.regenerateCompileCommands', () => regenerateCompileCommandsCommand()),
+    vscode.commands.registerCommand('ht32.regenerateMakefile', async () => {
+      const root = currentWsRoot();
+      if (!root) { vscode.window.showErrorMessage('No workspace folder open.'); return; }
+      const result = await pickBgDir(root, { placeHolder: 'Select project to regenerate' });
+      if (!result) return;
+      const bgDir = path.join(result.parent, result.chosen);
+      if (!readProjectMeta(bgDir)) {
+        vscode.window.showErrorMessage(`project.meta.json not found in ${result.chosen} — re-convert the project first.`);
+        return;
+      }
+      await initProjectsFromMeta([bgDir], root);
+      vscode.window.showInformationMessage(`Makefile regenerated: ${result.chosen}`);
+    }),
     vscode.commands.registerCommand('ht32.build', () => smartRunTask('build')),
     vscode.commands.registerCommand('ht32.runClean', () => smartRunTask('clean')),
     vscode.commands.registerCommand('ht32.openSettings', async () => {
@@ -606,7 +619,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
           ? fs.readdirSync(bgParentDir).filter(d => isBgDir(bgParentDir, d))
           : [];
         const bgDirsAll = bgNames.map(d => path.join(bgParentDir, d));
-        await resolveToolchain(root, bgDirsAll, async () => {
+        // 傳 [] 跳過 pyocd 偵測：pyocd 已在 generateTasksAndLaunch 內檢查過，此處只補 gcc/make 的缺口
+        await resolveToolchain(root, [], async () => {
           if (bgDirsAll.length > 0) { await initProjectsFromMeta(bgDirsAll, root); }
           await generateTasksAndLaunch(root);
         });
@@ -1107,7 +1121,7 @@ function setClangdIntelliSenseProject(root: string, bgName: string) {
     const settingsPath = path.join(root, '.vscode', 'settings.json');
     if (fs.existsSync(settingsPath)) {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      const args: string[] = settings['clangd.arguments'] ?? [];
+      const args: string[] = Array.isArray(settings['clangd.arguments']) ? settings['clangd.arguments'] : [];
       const newArgs = args.map((a: string) => {
         if (!a.startsWith('--compile-commands-dir=')) return a;
         // 只替換最後一段路徑（bgDir 名稱），保留 ${workspaceFolder} 等前綴
@@ -1209,6 +1223,8 @@ interface ToolchainPaths {
  * pyocd 只在 bgFullDirs 中有 serverType=pyocd 的專案時才檢查（自動安裝，不另外提示）。
  * 傳入空陣列 [] 可跳過 pyocd 檢查。
  */
+let _toolchainInstallPromise: Promise<void> | undefined;
+
 async function resolveToolchain(
   root: string,
   bgFullDirs: string[],
@@ -1220,13 +1236,14 @@ async function resolveToolchain(
   const gccPath         = await locateArmGcc();
 
   if (!makePathFull || !gccPath) {
-    const missing = [!gccPath && 'arm-none-eabi-gcc', !makePathFull && 'GNU make'].filter(Boolean).join(', ');
-    vscode.window.showWarningMessage(
-      `HT32: ${missing} not found. Build will not work until the toolchain is installed.`,
-      'Install via winget'
-    ).then(async sel => {
+    _toolchainInstallPromise ??= (async () => {
+      const missing = [!gccPath && 'arm-none-eabi-gcc', !makePathFull && 'GNU make'].filter(Boolean).join(', ');
+      const sel = await vscode.window.showWarningMessage(
+        `HT32: ${missing} not found. Build will not work until the toolchain is installed.`,
+        'Install via winget'
+      );
       if (sel) await ensureToolchain(root, extensionPath, async () => { await onInstalled(); });
-    });
+    })().finally(() => { _toolchainInstallPromise = undefined; });
   }
 
   const makeExe = makePathFull ? path.basename(makePathFull).replace(/\.exe$/i, '') : 'make';
@@ -1341,8 +1358,7 @@ async function autoAttachProjectFromWorkspace(ctx: vscode.ExtensionContext, tree
           // 把各 bgDir 的 compile_commands.json 合併進 .vscode/compile_commands.json
           // （initProjectsFromMeta 只寫 Project_xxx/，clangd 讀的是 .vscode/）
           const gccP    = await locateArmGcc();
-          const makeExe = await locateMake(ctx.extensionPath) ?? 'make';
-          writeMakefileToolsSettings(root, makeExe, bgNames, gccP ?? undefined);
+          writeMakefileToolsSettings(root, bgNames, gccP ?? undefined);
           // 每次開啟都重新產生 tasks.json / launch.json，確保 probe 設定、serverType 等
           // 始終與 project.settings.json 同步，不需要手動 "Generate Build & Debug Config"
           await generateTasksAndLaunch(root);
@@ -2000,7 +2016,6 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
           .filter(d => /^Project_/i.test(d))
           .map(d => path.join(dir, d))
           .filter(d => { try { return fs.statSync(d).isDirectory() && isHt32IdeProject(d); } catch { return false; } })
-          .sort().reverse()
           .forEach(d => { if (!projectDirs.includes(d)) { projectDirs.push(d); } });
       } catch {}
     }
@@ -2151,7 +2166,7 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
 }
 
 /** ====== tasks.json & launch.json ====== */
-function writeMakefileToolsSettings(root: string, makeCmd: string, bgDirs: string[], gccPath?: string) {
+function writeMakefileToolsSettings(root: string, bgDirs: string[], gccPath?: string) {
   const vscodeDir = path.join(root, '.vscode');
   const settingsPath = path.join(vscodeDir, 'settings.json');
   fs.mkdirSync(vscodeDir, { recursive: true });
@@ -2161,20 +2176,9 @@ function writeMakefileToolsSettings(root: string, makeCmd: string, bgDirs: strin
     try { data = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch {}
   }
 
-  // 指向第一個存在的 Makefile（單 project = build-gen，多 project = build-gen-xxx）
-  // bgRel: '' for new layout (build-gen at workspaceFolder root), '.vscode' for old layout
   const bgParentDir = bgParent(root);
   const bgRel = path.relative(root, bgParentDir).replace(/\\/g, '/');
   const primaryBg = bgDirs[0] ?? BG_BASE;
-  data['makefile.makefilePath'] = bgRel
-    ? `\${workspaceFolder}/${bgRel}/${primaryBg}/Makefile`
-    : `\${workspaceFolder}/${primaryBg}/Makefile`;
-  // makefile.makePath：只在找到完整路徑時寫入，避免 Makefile Tools 拿到裸 "make" 而爆炸
-  if (makeCmd && makeCmd !== 'make') {
-    data['makefile.makePath'] = makeCmd;
-  } else {
-    delete data['makefile.makePath'];
-  }
   data['makefile.configureOnOpen'] = false;
   data['cmake.configureOnOpen'] = false;
   data['cortex-debug.variableUseNaturalFormat'] = false;
@@ -2227,37 +2231,41 @@ async function generateTasksLaunchCommand() {
   }
 }
 
-/** Regenerate compile_commands.json from sources.list / includes.list / defines.list */
-async function regenerateCompileCommandsCommand() {
-  const root = currentWsRoot();
-  if (!root) { vscode.window.showErrorMessage('No workspace folder open.'); return; }
-
+/** bgDirs 掃描 + QuickPick 共用 helper（regenerateMakefile / regenerateCompileCommands 共用） */
+async function pickBgDir(
+  root: string,
+  opts: { requireMakefile?: boolean; placeHolder?: string } = {}
+): Promise<{ parent: string; chosen: string; bgDirs: string[] } | undefined> {
   const parent = bgParent(root);
   const projectOrder = readProjectOrder(parent);
   const allowedBgs = projectOrder ? new Set(projectOrder) : undefined;
   let bgDirs: string[] = [];
   try {
     bgDirs = fs.readdirSync(parent)
-      .filter(d => isBgDir(parent, d) && fs.existsSync(path.join(parent, d, 'Makefile'))
+      .filter(d => isBgDir(parent, d)
+                && (!opts.requireMakefile || fs.existsSync(path.join(parent, d, 'Makefile')))
                 && (!allowedBgs || allowedBgs.has(d)));
-    if (projectOrder) {
-      const orderMap = new Map(projectOrder.map((p, i) => [p, i]));
-      bgDirs.sort((a, b) => (orderMap.get(a) ?? 9999) - (orderMap.get(b) ?? 9999) || a.localeCompare(b));
-    } else {
-      bgDirs.sort();
-    }
+    const orderMap = projectOrder ? new Map(projectOrder.map((p, i) => [p, i])) : undefined;
+    bgDirs.sort((a, b) => ((orderMap?.get(a) ?? 9999) - (orderMap?.get(b) ?? 9999)) || a.localeCompare(b));
   } catch {}
-  if (bgDirs.length === 0) {
-    vscode.window.showErrorMessage('No Project directory found.'); return;
-  }
-
-  // If multiple projects, let user pick
+  if (bgDirs.length === 0) { vscode.window.showErrorMessage('No Project directory found.'); return undefined; }
   let chosen = bgDirs[0];
   if (bgDirs.length > 1) {
-    const picked = await vscode.window.showQuickPick(bgDirs, { placeHolder: 'Select project to regenerate' });
-    if (!picked) return;
+    const picked = await vscode.window.showQuickPick(bgDirs, { placeHolder: opts.placeHolder ?? 'Select project' });
+    if (!picked) return undefined;
     chosen = picked;
   }
+  return { parent, chosen, bgDirs };
+}
+
+/** Regenerate compile_commands.json from sources.list / includes.list / defines.list */
+async function regenerateCompileCommandsCommand() {
+  const root = currentWsRoot();
+  if (!root) { vscode.window.showErrorMessage('No workspace folder open.'); return; }
+
+  const result = await pickBgDir(root, { requireMakefile: true, placeHolder: 'Select project to regenerate' });
+  if (!result) return;
+  const { parent, chosen, bgDirs } = result;
 
   const bgDir = path.join(parent, chosen);
 
@@ -2276,8 +2284,7 @@ async function regenerateCompileCommandsCommand() {
       gccFullPath: gccPath ?? undefined,
     });
 
-    const makeExe = await locateMake(extensionPath) ?? 'make';
-    writeMakefileToolsSettings(root, makeExe, bgDirs, gccPath ?? undefined);
+    writeMakefileToolsSettings(root, bgDirs, gccPath ?? undefined);
 
     vscode.window.showInformationMessage(`compile_commands.json regenerated for ${chosen}.`);
   });
@@ -3267,7 +3274,14 @@ function generatePyocdFiles(
  * Returns the absolute path to pyocd.exe when installed via uv (must be set as serverpath).
  * Returns undefined when pyocd is already in PATH (cortex-debug finds it automatically).
  */
+let _pyocdInstallPromise: Promise<string | undefined> | undefined;
+
 async function findOrInstallPyocd(extPath: string): Promise<string | undefined> {
+  if (_pyocdInstallPromise) return _pyocdInstallPromise;
+  return (_pyocdInstallPromise = _doFindOrInstallPyocd(extPath).finally(() => { _pyocdInstallPromise = undefined; }));
+}
+
+async function _doFindOrInstallPyocd(extPath: string): Promise<string | undefined> {
   function runCmd(cmd: string, timeoutMs: number): Promise<{ ok: boolean; out: string }> {
     return new Promise(resolve => {
       cpExec(cmd, { windowsHide: true, timeout: timeoutMs }, (err, stdout) => {
@@ -3557,7 +3571,8 @@ function runAfterBuildSync(wsRoot: string): void {
 
 async function generateTasksAndLaunch(
   root: string,
-  opts?: { bgDirHint?: string; elfPathHint?: string; deviceNameHint?: string; mcuHint?: string; ramOriginHint?: string; ramLengthHint?: string; spimFlmHint?: string }
+  opts?: { bgDirHint?: string; elfPathHint?: string; deviceNameHint?: string; mcuHint?: string; ramOriginHint?: string; ramLengthHint?: string; spimFlmHint?: string },
+  isRetry = false
 ) {
   const cfg = vscode.workspace.getConfiguration('ht32');
 
@@ -3612,17 +3627,18 @@ async function generateTasksAndLaunch(
 
   // ★ 統一工具鏈解析：make + gcc + pyocd；缺工具時顯示單一 warning
   const bgFullDirs = bgDirs.map(d => path.join(bgParentDir, d));
+  const onToolchainInstalled = isRetry ? async () => {} : async () => {
+    const bp      = bgParent(root);
+    const bgNames = fs.existsSync(bp) ? fs.readdirSync(bp).filter(d => isBgDir(bp, d)) : [];
+    if (bgNames.length) await initProjectsFromMeta(bgNames.map(d => path.join(bp, d)), root);
+    await generateTasksAndLaunch(root, opts, true);
+  };
   const { makePathFull, makeExe, gccPath, pyocdPath: pyocdServerPath } = await resolveToolchain(
-    root, bgFullDirs, async () => {
-      const bp      = bgParent(root);
-      const bgNames = fs.existsSync(bp) ? fs.readdirSync(bp).filter(d => isBgDir(bp, d)) : [];
-      if (bgNames.length) await initProjectsFromMeta(bgNames.map(d => path.join(bp, d)), root);
-      await generateTasksAndLaunch(root);
-    }
+    root, bgFullDirs, onToolchainInstalled
   );
 
   // settings.json：需要 bgDirs 才能確定路徑，放在掃描完之後
-  await writeMakefileToolsSettings(root, makeExe, bgDirs, gccPath || undefined);
+  await writeMakefileToolsSettings(root, bgDirs, gccPath || undefined);
 
   // .clangd：gcc 路徑已確定，統一在此產生，所有流程（create/open/convert）都經過這裡
   ensureClangdAtProjectRoot(root, bgDirs[0], gccPath || undefined);
@@ -4334,8 +4350,7 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
 
   // Re-merge all per-bgDir compile_commands.json into .vscode/compile_commands.json
   const gccPath = await locateArmGcc();
-  const makeExe = await locateMake(extensionPath) ?? 'make';
-  writeMakefileToolsSettings(root, makeExe, bgEntries.map(e => e.name), gccPath ?? undefined);
+  writeMakefileToolsSettings(root, bgEntries.map(e => e.name), gccPath ?? undefined);
 }
 
 
@@ -4472,6 +4487,14 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
     /(?:# ---- \u70ba\u6bcf\u500b\u6e90\u6587\u4ef6\u751f\u6210\u5c08\u5c6c\u898f\u5247\uff08\u907f\u514d VPATH\uff09 ----|# ---- Per-source explicit rules \(avoids VPATH\) ----)[\s\S]*?(?=# ---- Dirs ----)/,
     newRulesSection
   );
+
+  if (!mk.includes('# ---- Dirs ----')) {
+    vscode.window.showWarningMessage(
+      `Makefile in "${path.basename(buildGenDir)}" is outdated — compile rules may be incorrect. ` +
+      `Run "HT32: Regenerate Makefile" from the Command Palette.`
+    );
+    return;
+  }
 
   fs.writeFileSync(makefilePath, mk);
 
