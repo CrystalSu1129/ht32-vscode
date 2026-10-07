@@ -5,6 +5,7 @@ import * as path from 'path';
 import { XMLParser } from 'fast-xml-parser';
 import { detectFpuPresentFromHeader, find49xGccDir, fwlRootFromSourcePath, fwlRootFromTemplate, is49xDevice, patchLdStackSections, specsFlags, makeSrcRule, makeSpacedSrcRule, buildMakefileText, enforceMinHeap, generateStackAnalysis, writeCCDbFromLists, logInfo, logWarn, bundledGnuDirFromFwlRoot, FileOption, relocateBatToWsRoot } from './uv2make';
 import { readProjectSettings, writeProjectSettings } from './settingsWebview';
+import { writeProjectLists } from './utils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -840,10 +841,8 @@ export function writeHt32IdeLists(bgDir: string, result: Ht32IdeResult): void {
   const asmOnlyDefs = (result.asmDefines ?? []).filter(d => !cDefSet.has(d));
   const aDefsStr = asmOnlyDefs.map(d => `-D${d}`).join(' ');
 
-  fs.writeFileSync(path.join(bgDir, 'sources.list'),  srcs.join('\n'));
-  fs.writeFileSync(path.join(bgDir, 'includes.list'), incsStr);
-  fs.writeFileSync(path.join(bgDir, 'defines.list'),  defsStr);
-  fs.writeFileSync(path.join(bgDir, 'adefines.list'), aDefsStr);
+  fs.writeFileSync(path.join(bgDir, 'sources.list'), srcs.join('\n'));
+  writeProjectLists(bgDir, { includes: incsStr, defines: defsStr, adefines: aDefsStr });
 }
 
 export function patchStartupFiles(result: Ht32IdeResult, bgDir: string, gnuArmDir?: string): Ht32IdeResult {

@@ -10,8 +10,9 @@ import { openSettingsPanel, AutoLoaderEntry, readProjectSettings, writeProjectSe
 import { openCreateProjectPanel, generateProjectFiles } from './tools/createProject';
 import { parseHt32IdeProject, generateMakefile, buildProjectMeta, generateLinkerScript, patchStartupFiles, writeHt32IdeLists, resolveHt32IdePostBuildPath, computeHt32IdeWsRoot, convertHt32IdeProject, Ht32IdeConvertProjectResult } from './tools/ht32ide2make';
 import { StackAnalysisProvider, StackAnalysisTrackerFactory } from './tools/stackAnalysisProvider';
-import { semverCmp } from './tools/utils';
+import { semverCmp, writeProjectLists } from './tools/utils';
 import { syncAfterBuildBats } from './tools/afterbuildSync';
+import * as https from 'https';
 
 let extensionPath: string;    // set in activate(), used by generateTasksAndLaunch()
 let extensionVersion = '';    // set in activate(), injected into project.meta.json
@@ -108,6 +109,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // Tree
   const tree = new ProjectTreeProvider();
   const treeView = vscode.window.createTreeView(PROJECT_VIEW_ID, { treeDataProvider: tree });
+  treeView.title = `PROJECT FILES (v${ctx.extension.packageJSON.version})`;
   ctx.subscriptions.push(treeView);
   ctx.subscriptions.push(treeView.onDidChangeSelection(e => {
     const item = e.selection[0];
@@ -315,6 +317,33 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand('ht32.openReadme', () => {
       const readmePath = vscode.Uri.joinPath(ctx.extensionUri, 'README.md');
       vscode.commands.executeCommand('markdown.showPreview', readmePath);
+    }),
+    vscode.commands.registerCommand('ht32.updateFromMarketplace', async () => {
+      const current = ctx.extension.packageJSON.version as string;
+      const sb = vscode.window.setStatusBarMessage('$(sync~spin) Checking for updates…');
+      try {
+        const latest = await fetchMarketplaceVersion('holtek.ht32-vscode');
+        if (latest === current) {
+          vscode.window.showInformationMessage(`Holtek HT32 VS Code Extension is already up to date (v${current}).`);
+        } else {
+          vscode.window.showInformationMessage(`Updating Holtek HT32 VS Code Extension: v${current} → v${latest}`);
+          vscode.commands.executeCommand('workbench.extensions.installExtension', 'holtek.ht32-vscode');
+        }
+      } catch {
+        vscode.window.showErrorMessage('Failed to check for updates. Please check your network connection.');
+      } finally {
+        sb.dispose();
+      }
+    }),
+    vscode.commands.registerCommand('ht32.installFromVsix', async () => {
+      const files = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { 'VSIX Package': ['vsix'] },
+        title: 'Select VSIX to Install'
+      });
+      if (files?.[0]) {
+        vscode.commands.executeCommand('workbench.extensions.installExtension', files[0]);
+      }
     }),
     vscode.commands.registerCommand('ht32.convertUvision', () => convertUvision(ctx, tree, treeView)),
     vscode.commands.registerCommand('ht32.convertHt32Ide', () => convertHt32Ide(ctx, tree, treeView)),
@@ -1296,17 +1325,12 @@ async function initProjectsFromMeta(bgDirs: string[], wsRoot: string): Promise<v
       // 2. 從 meta 更新 SRCS + 產生 sources.list（open project 路徑，不刪 ELF）
       updateProjectMeta(bgDir, meta, { skipElfInvalidation: true });
 
-      // 3. 產生 includes.list（-I"path" 格式）
-      const incs = (s.includePaths ?? []).map(p => `-I"${p}"`).join(' ');
-      fs.writeFileSync(path.join(bgDir, 'includes.list'), incs);
-
-      // 4. 產生 defines.list（C defines）
-      const defs = (s.cDefs ?? []).map(d => `-D${d}`).join(' ');
-      fs.writeFileSync(path.join(bgDir, 'defines.list'), defs);
-
-      // 5. 產生 adefines.list（assembler-only defines，例如 USE_HT32_CHIP；startup .s 透過 -x assembler-with-cpp 讀取）
-      const adefs = (s.aDefs ?? []).map(d => `-D${d}`).join(' ');
-      fs.writeFileSync(path.join(bgDir, 'adefines.list'), adefs);
+      // 3-5. 產生 includes.list / defines.list / adefines.list
+      writeProjectLists(bgDir, {
+        includes: (s.includePaths ?? []).map(p => `-I"${p}"`).join(' '),
+        defines:  (s.cDefs  ?? []).map(d => `-D${d}`).join(' '),
+        adefines: (s.aDefs  ?? []).map(d => `-D${d}`).join(' '),
+      });
 
       // 6. 產生 compile_commands.json
       writeCCDbFromLists(bgDir, {
@@ -3731,7 +3755,7 @@ async function generateTasksAndLaunch(
         command:        wrapPostBuildCmd(postBuildCmd),
         options:        { cwd: '${workspaceFolder}', ...(envForTasks ? { env: envForTasks } : {}) },
         problemMatcher: [],
-        presentation:   { reveal: 'always', panel: 'dedicated', clear: false }
+        presentation:   { reveal: 'always', panel: 'dedicated', clear: true }
       });
       // "Build X" = compound：先 Compile 再 Post-Build
       taskList.push({
@@ -3760,7 +3784,7 @@ async function generateTasksAndLaunch(
       args:           ['-C', bgCwdOf(bg), 'clean'],
       options:        { cwd: bgCwdOf(bg), ...(envForTasks ? { env: envForTasks } : {}) },
       problemMatcher: [],
-      presentation:   { reveal: 'always', panel: 'dedicated', clear: false }
+      presentation:   { reveal: 'always', panel: 'dedicated', clear: true }
     });
   }
   // 多個 build-gen 時加 Build All / Clean All（依序編譯，Build X 已內含 Post-Build）
@@ -5272,4 +5296,42 @@ class RecentTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       return it;
     }));
   }
+}
+
+function fetchMarketplaceVersion(extensionId: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      filters: [{ criteria: [{ filterType: 7, value: extensionId }] }],
+      flags: 512
+    });
+    const req = https.request({
+      hostname: 'marketplace.visualstudio.com',
+      path: '/_apis/public/gallery/extensionquery',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json;api-version=3.0-preview.1',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('error', reject);
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Marketplace returned HTTP ${res.statusCode}`));
+          return;
+        }
+        try {
+          const json = JSON.parse(data);
+          const version: string | undefined = json.results?.[0]?.extensions?.[0]?.versions?.[0]?.version;
+          version ? resolve(version) : reject(new Error('Extension not found on Marketplace'));
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(10_000, () => req.destroy(new Error('Request timed out')));
+    req.write(body);
+    req.end();
+  });
 }

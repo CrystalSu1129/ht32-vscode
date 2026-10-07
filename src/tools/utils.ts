@@ -1,3 +1,6 @@
+import * as fs   from 'fs';
+import * as path from 'path';
+
 /**
  * Compare two version-like strings semantically (numeric segment by segment).
  * Handles plain versions ("1.0.76"), embedded versions ("Holtek.HT32_DFP.1.0.76.pack"),
@@ -31,4 +34,15 @@ export function semverCmp(a: string, b: string): number {
 export function newestVersion(versions: string[]): string | undefined {
   if (versions.length === 0) return undefined;
   return [...versions].sort(semverCmp)[versions.length - 1];
+}
+
+/** Write includes.list / defines.list / adefines.list (pre-formatted strings). */
+export function writeProjectLists(dir: string, lists: {
+  includes: string;
+  defines:  string;
+  adefines: string;
+}): void {
+  fs.writeFileSync(path.join(dir, 'includes.list'), lists.includes);
+  fs.writeFileSync(path.join(dir, 'defines.list'),  lists.defines);
+  fs.writeFileSync(path.join(dir, 'adefines.list'), lists.adefines);
 }

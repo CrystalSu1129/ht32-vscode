@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { scatter2ld } from "./scatter2ld";
-import { semverCmp } from './utils';
+import { semverCmp, writeProjectLists } from './utils';
 import { readProjectSettings, writeProjectSettings, ProjectSettings } from "./settingsWebview";
 
 /* ──────────────────────────────────────
@@ -2143,10 +2143,12 @@ function extractProjectInfo(doc: any, projDir: string, fallbackName: string, bui
 function writeLists(outDir: string, info: Extracted) {
   const dir2 = path.basename(outDir);
   logInfo(`Write → ${dir2}/sources.list, ${dir2}/includes.list, ${dir2}/defines.list, ${dir2}/adefines.list`);
-  fs.writeFileSync(path.join(outDir, "sources.list"),       info.sources.join("\n"));
-  fs.writeFileSync(path.join(outDir, "includes.list"),      ['-I../GNU_ARM', ...info.includes.map(i => `-I"${i}"`)].join(" "));
-  fs.writeFileSync(path.join(outDir, "defines.list"),       info.defines.map(d => `-D${d}`).join(" "));
-  fs.writeFileSync(path.join(outDir, "adefines.list"),      (info.asmDefines ?? []).map(d => `-D${d}`).join(" "));
+  fs.writeFileSync(path.join(outDir, "sources.list"), info.sources.join("\n"));
+  writeProjectLists(outDir, {
+    includes: ['-I../GNU_ARM', ...info.includes.map(i => `-I"${i}"`)].join(" "),
+    defines:  info.defines.map(d => `-D${d}`).join(" "),
+    adefines: (info.asmDefines ?? []).map(d => `-D${d}`).join(" "),
+  });
 }
 
 function guessLinkerFlags(linkerScripts: string[] = ['../GNU_ARM/linker.ld']): string {

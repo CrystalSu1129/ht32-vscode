@@ -5,6 +5,7 @@ import * as path from 'path';
 import { find49xGccDir, generateStackAnalysis, lookupSramFromSettings, lookupMemoryFromPdsc, detectFpuPresentFromHeader, patchLdStackSections, specsFlags, buildMakefileFromProjectSettings, writeCCDbFromLists, MIN_HEAP_SIZE, bundledGnuDirFromFwlRoot } from './uv2make';
 import { locateArmGcc } from './toolchain';
 import { readProjectSettings, writeProjectSettings } from './settingsWebview';
+import { writeProjectLists } from './utils';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -1524,10 +1525,12 @@ export async function generateProjectFiles(
     isLibrary:     isLib,
     comment:       'Created by HT32 VS Code Extension.',
   }));
-  fs.writeFileSync(path.join(bgDir, 'sources.list'),  allSrcs.join('\n'));
-  fs.writeFileSync(path.join(bgDir, 'includes.list'), incsStr);
-  fs.writeFileSync(path.join(bgDir, 'defines.list'),  defsStr);
-  fs.writeFileSync(path.join(bgDir, 'adefines.list'), asmDefines.map(d => `-D${d}`).join(' '));
+  fs.writeFileSync(path.join(bgDir, 'sources.list'), allSrcs.join('\n'));
+  writeProjectLists(bgDir, {
+    includes: incsStr,
+    defines:  defsStr,
+    adefines: asmDefines.map(d => `-D${d}`).join(' '),
+  });
 
   // compile_commands.json — read from .list files (written above) to stay in sync
   writeCCDbFromLists(bgDir, {
