@@ -69,6 +69,8 @@ export type MachineSettings = {
 /** Backward-compat alias */
 export type HT32Settings = MachineSettings & ProjectSettings;
 
+const DEFAULT_LINKER_SCRIPTS = ['../GNU_ARM/linker.ld'];
+
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   optimizationLevel: 'Os',
   floatAbi:          'soft',
@@ -503,16 +505,24 @@ export function openSettingsPanel(
 
   const machineSettings = readMachineSettings();
   const projectSettingsByBg: Record<string, ProjectSettings> = {};
-  const targetNamesByBg:  Record<string, string> = {};
+  const targetNamesByBg:     Record<string, string> = {};
+  const linkerScriptsByBg:   Record<string, string[]> = {};
   for (const bg of bgDirs) {
     const s = readProjectSettings(bg.dir);
     projectSettingsByBg[bg.name] = s;
-    if (s.targetName)  targetNamesByBg[bg.name]  = s.targetName;
+    if (s.targetName) targetNamesByBg[bg.name] = s.targetName;
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(bg.dir, 'project.meta.json'), 'utf8'));
+      linkerScriptsByBg[bg.name] = (meta.linkerScripts as string[] | undefined) ?? DEFAULT_LINKER_SCRIPTS;
+    } catch (e) {
+      vscode.window.showWarningMessage(`HT32: Failed to read linker scripts for ${bg.name} — ${(e as Error).message ?? e}`);
+      linkerScriptsByBg[bg.name] = DEFAULT_LINKER_SCRIPTS;
+    }
   }
 
   _openocdAvailable = fs.existsSync(openocdRoot);
   panel.webview.html = buildHtml(
-    machineSettings, bgDirs, projectSettingsByBg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, targetNamesByBg, detectedGccPath
+    machineSettings, bgDirs, projectSettingsByBg, availableFlms, autoLoadersByBg, projectNamesByBg, flmAddrMap, targetNamesByBg, linkerScriptsByBg, detectedGccPath
   );
 
   panel.webview.onDidReceiveMessage(async (msg) => {
@@ -529,6 +539,54 @@ export function openSettingsPanel(
         // No project loaded: fallback to workspace settings
         if (msg.projectSettings) {
           await writeProjectSettingsToWorkspace(msg.projectSettings as ProjectSettings);
+        }
+      }
+      // Write linkerScripts back to meta.json (not part of ProjectSettings)
+      const ldByBg = msg.linkerScriptsByBg as Record<string, string[]> | undefined;
+      if (ldByBg) {
+        for (const bg of bgDirs) {
+          const scripts = ldByBg[bg.name];
+          if (!scripts) continue;
+          try {
+            const metaPath = path.join(bg.dir, 'project.meta.json');
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+            // Normalize: convert absolute paths to bgDir-relative
+            const newScripts: string[] = scripts.map((s: string) =>
+              path.isAbsolute(s) ? path.relative(bg.dir, s).replace(/\\/g, '/') : s
+            );
+            const projectRoot = path.dirname(path.dirname(bg.dir));
+            meta.groups = meta.groups ?? {};
+
+            // Helper: bgDir-relative ld → projectRoot-relative (newScripts are always relative after normalization above)
+            const toGroupPath = (ldRel: string) =>
+              path.relative(projectRoot, path.resolve(bg.dir, ldRel)).replace(/\\/g, '/');
+
+            const prevScripts: string[] = meta.linkerScripts ?? [];
+            const prevSet = new Set(prevScripts.map(toGroupPath));
+            const newSet  = new Set(newScripts.map(toGroupPath));
+
+            // Add new entries to groups["Linker"] (dedup)
+            const linkerGroup: string[] = meta.groups['Linker'] ?? [];
+            for (const gp of newSet) {
+              if (!prevSet.has(gp) && !linkerGroup.includes(gp)) {
+                linkerGroup.push(gp);
+              }
+            }
+            meta.groups['Linker'] = linkerGroup;
+
+            // Remove deleted entries from whichever group contains them
+            const removedSet = new Set([...prevSet].filter(gp => !newSet.has(gp)));
+            for (const grp of Object.keys(meta.groups)) {
+              meta.groups[grp] = (meta.groups[grp] as string[]).filter(
+                (p: string) => !removedSet.has(p)
+              );
+            }
+
+            meta.linkerScripts = newScripts;
+            fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n', 'utf8');
+          } catch (e) {
+              vscode.window.showWarningMessage(`HT32: Failed to update linker scripts in project.meta.json — ${(e as Error).message ?? e}`);
+            }
         }
       }
       if (msg.type === 'autoSave') {
@@ -555,43 +613,33 @@ export function openSettingsPanel(
       const result = await runOpenocdProbe(openocdExe, ifaceCfg, msg.serial as string, msg.adapterSpeed as string);
       panel?.webview.postMessage({ type: 'idcodeResult', bgName: msg.bgName ?? '', serial: msg.serial ?? '', text: result });
     } else if (msg.type === 'browseFile') {
-      let fileDefaultUri: vscode.Uri | undefined;
-      const fcp = msg.currentPath as string | undefined;
-      if (fcp) {
-        try {
-          const stat = fs.statSync(fcp);
-          fileDefaultUri = vscode.Uri.file(stat.isDirectory() ? fcp : path.dirname(fcp));
-        } catch { /* ignore */ }
-      }
+      const relativeBase = msg.relativeBase as string | undefined;
       const uris = await vscode.window.showOpenDialog({
         canSelectMany: false,
         openLabel: 'Select',
-        defaultUri: fileDefaultUri,
+        defaultUri: resolveBrowseDefaultUri(msg.currentPath as string | undefined, msg.bgDir as string | undefined),
         filters: (msg.filters as Record<string, string[]> | undefined) ?? { 'All files': ['*'] },
       });
       if (uris && uris.length > 0) {
-        panel?.webview.postMessage({ type: 'browseFileResult', browseId: msg.browseId, filePath: uris[0].fsPath });
+        const filePath = relativeBase
+          ? path.relative(relativeBase, uris[0].fsPath).replace(/\\/g, '/')
+          : uris[0].fsPath;
+        panel?.webview.postMessage({ type: 'browseFileResult', browseId: msg.browseId, filePath });
       }
     } else if (msg.type === 'browseDir') {
-      let defaultUri: vscode.Uri | undefined;
-      const cp    = msg.currentPath as string | undefined;
-      const bgDir = msg.bgDir      as string | undefined;
-      if (cp) {
-        try {
-          const resolved = (bgDir && !path.isAbsolute(cp)) ? path.resolve(bgDir, cp) : cp;
-          const stat = fs.statSync(resolved);
-          defaultUri = vscode.Uri.file(stat.isDirectory() ? resolved : path.dirname(resolved));
-        } catch { /* path doesn't exist yet — no defaultUri */ }
-      }
+      const relativeBase = msg.relativeBase as string | undefined;
       const uris = await vscode.window.showOpenDialog({
         canSelectMany: false,
         canSelectFolders: true,
         canSelectFiles: false,
         openLabel: 'Select Folder',
-        defaultUri,
+        defaultUri: resolveBrowseDefaultUri(msg.currentPath as string | undefined, msg.bgDir as string | undefined),
       });
       if (uris && uris.length > 0) {
-        panel?.webview.postMessage({ type: 'browseFileResult', browseId: msg.browseId, filePath: uris[0].fsPath });
+        const filePath = relativeBase
+          ? path.relative(relativeBase, uris[0].fsPath).replace(/\\/g, '/')
+          : uris[0].fsPath;
+        panel?.webview.postMessage({ type: 'browseFileResult', browseId: msg.browseId, filePath });
       }
     } else if (msg.type === 'cancel') {
       panel?.dispose();
@@ -604,6 +652,30 @@ export function openSettingsPanel(
     }
   });
   panel.onDidDispose(() => { panel = undefined; });
+}
+
+/**
+ * Called by TreeView operations (add/remove .ld) to sync the open Settings WebView.
+ * If the panel is not open, this is a no-op.
+ */
+export function notifySettingsLinkerScriptsChanged(bgName: string, linkerScripts: string[]): void {
+  panel?.webview.postMessage({ type: 'updateLinkerScripts', bgName, linkerScripts });
+}
+
+/** Resolve the default directory for a file/folder browse dialog.
+ *  Tries to open at the current path's directory; falls back to bgDir. */
+function resolveBrowseDefaultUri(currentPath: string | undefined, bgDir: string | undefined): vscode.Uri | undefined {
+  if (currentPath) {
+    try {
+      const resolved = (bgDir && !path.isAbsolute(currentPath)) ? path.resolve(bgDir, currentPath) : currentPath;
+      const stat = fs.statSync(resolved);
+      return vscode.Uri.file(stat.isDirectory() ? resolved : path.dirname(resolved));
+    } catch { /* path doesn't exist yet */ }
+  }
+  if (bgDir) {
+    try { return vscode.Uri.file(bgDir); } catch { /* ignore */ }
+  }
+  return undefined;
 }
 
 /* ────────────────────────────────────────────────
@@ -620,7 +692,8 @@ function buildHtml(
   autoLoadersByBg: Record<string, AutoLoaderEntry[]>,
   projectNamesByBg: Record<string, string>,
   flmAddrMap: Record<string, { start: string; end: string }>,
-  targetNamesByBg:  Record<string, string> = {},
+  targetNamesByBg:   Record<string, string> = {},
+  linkerScriptsByBg: Record<string, string[]> = {},
   detectedGccPath?: string
 ): string {
   const flmsJson    = JSON.stringify(availableFlms);
@@ -638,11 +711,12 @@ function buildHtml(
         availableFlms,
         targetNamesByBg[bg.name]  ?? '',
         i === 0 ? machine : null,
-        i === 0 ? detectedGccPath : undefined
+        i === 0 ? detectedGccPath : undefined,
+        linkerScriptsByBg[bg.name] ?? DEFAULT_LINKER_SCRIPTS
       )).join('\n')
     : `<p class="hint" style="color:var(--vscode-inputValidation-warningForeground);margin:8px 0 16px">
   No converted project found in the workspace. Convert a .uvprojx/.uvmpw first, then reopen this panel.
-</p>` + buildProjectSection('', '', '', DEFAULT_PROJECT_SETTINGS, [], availableFlms, '', machine);
+</p>` + buildProjectSection('', '', '', DEFAULT_PROJECT_SETTINGS, [], availableFlms, '', machine, undefined, []);
 
   const saveCancelBar = (isTop: boolean) => `
 <div class="${isTop ? 'sticky-bar' : 'footer-bar'}">
@@ -912,9 +986,7 @@ function addLibPath(bgName) {
   var browseBtn = document.createElement('button');
   browseBtn.className = 'btn-secondary'; browseBtn.title = 'Browse directory'; browseBtn.textContent = '…';
   browseBtn.style.cssText = 'padding:0 6px;min-width:26px;';
-  browseBtn.addEventListener('click', function() {
-    vscode.postMessage({ type: 'browseDir', browseId: browseId, currentPath: pathInp.value.trim(), bgDir: BG_DIRS[bgName] || '' });
-  });
+  browseBtn.addEventListener('click', function() { browseDirAt(browseId, bgName); });
 
   var removeBtn = document.createElement('button');
   removeBtn.className = 'btn-remove'; removeBtn.title = 'Remove'; removeBtn.textContent = '\u2715';
@@ -942,7 +1014,9 @@ function collectLibPaths(bgName) {
 
 function browseDirAt(browseId, bgName) {
   var inp = document.querySelector('[data-browse-id="' + browseId + '"]');
-  vscode.postMessage({ type: 'browseDir', browseId: browseId, currentPath: inp ? inp.value.trim() : '', bgDir: BG_DIRS[bgName] || '' });
+  var bgDir = BG_DIRS[bgName] || '';
+  vscode.postMessage({ type: 'browseDir', browseId: browseId, currentPath: inp ? inp.value.trim() : '',
+    bgDir: bgDir, relativeBase: bgDir });
 }
 
 function addIncPath(bgName) {
@@ -962,9 +1036,7 @@ function addIncPath(bgName) {
   browseBtn.className = 'btn-secondary'; browseBtn.title = 'Browse directory';
   browseBtn.style.cssText = 'padding:0 6px;min-width:26px;';
   browseBtn.textContent = '\u2026';
-  browseBtn.addEventListener('click', function() {
-    vscode.postMessage({ type: 'browseDir', browseId: browseId, currentPath: inp.value.trim(), bgDir: BG_DIRS[bgName] || '' });
-  });
+  browseBtn.addEventListener('click', function() { browseDirAt(browseId, bgName); });
   inp.setAttribute('data-browse-id', browseId);
 
   var removeBtn = document.createElement('button');
@@ -981,6 +1053,45 @@ function collectIncPaths(bgName) {
   return Array.from(rows.querySelectorAll('.inc-path-val'))
     .map(function(inp) { return inp.value.trim(); })
     .filter(function(v) { return v !== ''; });
+}
+
+function addLinkerScript(bgName) {
+  var rows = document.getElementById(pid(bgName, 'ldRows'));
+  if (!rows) return;
+  var ph = rows.querySelector('.no-items');
+  if (ph) ph.remove();
+  var row = document.createElement('div');
+  row.className = 'ld-row';
+  var inp = document.createElement('input');
+  inp.type = 'text'; inp.className = 'ld-path-val';
+  inp.placeholder = '../GNU_ARM/linker.ld';
+  var browseId = 'ldBrowse_' + Date.now();
+  inp.setAttribute('data-browse-id', browseId);
+  var browseBtn = document.createElement('button');
+  browseBtn.className = 'btn-secondary'; browseBtn.title = 'Browse .ld file';
+  browseBtn.style.cssText = 'padding:0 6px;min-width:26px;';
+  browseBtn.textContent = '…';
+  browseBtn.addEventListener('click', function() { browseFileAt(browseId, bgName, { 'Linker Scripts': ['ld'] }); });
+  var removeBtn = document.createElement('button');
+  removeBtn.className = 'btn-remove'; removeBtn.title = 'Remove'; removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', function() { row.remove(); setDirty(); });
+  row.appendChild(inp); row.appendChild(browseBtn); row.appendChild(removeBtn);
+  rows.appendChild(row);
+}
+
+function collectLinkerScripts(bgName) {
+  var rows = document.getElementById(pid(bgName, 'ldRows'));
+  if (!rows) return [];
+  return Array.from(rows.querySelectorAll('.ld-path-val'))
+    .map(function(inp) { return inp.value.trim(); })
+    .filter(function(v) { return v !== ''; });
+}
+
+function browseFileAt(browseId, bgName, filters) {
+  var inp = document.querySelector('[data-browse-id="' + browseId + '"]');
+  var bgDir = BG_DIRS[bgName] || '';
+  vscode.postMessage({ type: 'browseFile', browseId: browseId, currentPath: inp ? inp.value.trim() : '',
+    filters: filters || {}, bgDir: bgDir, relativeBase: bgDir });
 }
 
 function addDef(bgName, defType) {
@@ -1162,6 +1273,37 @@ window.addEventListener('message', function(event) {
     if (inp) { inp.value = msg.filePath; inp.dispatchEvent(new Event('change', { bubbles: true })); }
     return;
   }
+  if (msg.type === 'updateLinkerScripts') {
+    // TreeView changed linkerScripts — refresh the ldRows without rebuilding the whole panel
+    var rows = document.getElementById(pid(msg.bgName, 'ldRows'));
+    if (!rows) return;
+    rows.innerHTML = '';
+    var scripts = msg.linkerScripts || [];
+    if (scripts.length === 0) {
+      rows.innerHTML = '<p class="no-items">No linker scripts.</p>';
+    } else {
+      scripts.forEach(function(v, i) {
+        var browseId = 'ldBrowse_tv_' + (msg.bgName || '') + i;
+        var div = document.createElement('div');
+        div.className = 'ld-row';
+        var inp2 = document.createElement('input');
+        inp2.type = 'text'; inp2.className = 'ld-path-val'; inp2.value = v;
+        inp2.placeholder = '../GNU_ARM/linker.ld';
+        inp2.setAttribute('data-browse-id', browseId);
+        var browseBtn = document.createElement('button');
+        browseBtn.className = 'btn-secondary'; browseBtn.title = 'Browse .ld file';
+        browseBtn.style.cssText = 'padding:0 6px;min-width:26px;';
+        browseBtn.textContent = '…';
+        browseBtn.addEventListener('click', function() { browseFileAt(browseId, msg.bgName, { 'Linker Scripts': ['ld'] }); });
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-remove'; removeBtn.title = 'Remove'; removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', function() { div.remove(); setDirty(); });
+        div.appendChild(inp2); div.appendChild(browseBtn); div.appendChild(removeBtn);
+        rows.appendChild(div);
+      });
+    }
+    return;
+  }
   if (msg.type === 'idcodeResult') {
     var p0  = (msg.bgName || '') ? (msg.bgName + '__') : '';
     var div = document.getElementById(p0 + 'idcodeResult');
@@ -1237,14 +1379,19 @@ function scheduleAutoSave() {
 function doAutoSave() {
   _autoSaveTimer = null;
   var allProjectSettings = {};
+  var linkerScriptsByBg = {};
   if (BG_NAMES.length > 0) {
-    BG_NAMES.forEach(function(bgName) { allProjectSettings[bgName] = collectProjectSettings(bgName); });
+    BG_NAMES.forEach(function(bgName) {
+      allProjectSettings[bgName] = collectProjectSettings(bgName);
+      linkerScriptsByBg[bgName]  = collectLinkerScripts(bgName);
+    });
   }
   vscode.postMessage({
     type: 'autoSave',
     machineSettings: { gccPath: v('gccPath'), openocdPath: v('openocdPath') },
-    allProjectSettings: BG_NAMES.length > 0 ? allProjectSettings : undefined,
-    projectSettings:    BG_NAMES.length === 0 ? collectProjectSettings('') : undefined,
+    allProjectSettings:  BG_NAMES.length > 0 ? allProjectSettings : undefined,
+    projectSettings:     BG_NAMES.length === 0 ? collectProjectSettings('') : undefined,
+    linkerScriptsByBg:   BG_NAMES.length > 0 ? linkerScriptsByBg : undefined,
   });
 }
 document.addEventListener('change', setDirty);
@@ -1252,9 +1399,11 @@ document.addEventListener('input',  setDirty);
 
 function doSave() {
   var allProjectSettings = {};
+  var linkerScriptsByBg = {};
   if (BG_NAMES.length > 0) {
     BG_NAMES.forEach(function(bgName) {
       allProjectSettings[bgName] = collectProjectSettings(bgName);
+      linkerScriptsByBg[bgName]  = collectLinkerScripts(bgName);
     });
   }
   vscode.postMessage({
@@ -1264,8 +1413,9 @@ function doSave() {
       gccPath:     v('gccPath'),
       openocdPath: v('openocdPath'),
     },
-    allProjectSettings: BG_NAMES.length > 0 ? allProjectSettings : undefined,
-    projectSettings:    BG_NAMES.length === 0 ? collectProjectSettings('') : undefined,
+    allProjectSettings:  BG_NAMES.length > 0 ? allProjectSettings : undefined,
+    projectSettings:     BG_NAMES.length === 0 ? collectProjectSettings('') : undefined,
+    linkerScriptsByBg:   BG_NAMES.length > 0 ? linkerScriptsByBg : undefined,
   });
 }
 
@@ -1287,7 +1437,8 @@ function buildProjectSection(
   availableFlms: string[],
   defaultTargetName: string = '',
   machine: MachineSettings | null = null,
-  detectedGccPath?: string
+  detectedGccPath?: string,
+  linkerScripts: string[] = DEFAULT_LINKER_SCRIPTS
 ): string {
   const p   = bgName ? bgName + '__' : '';
   const id  = (field: string) => `${p}${field}`;
@@ -1312,6 +1463,16 @@ function buildProjectSection(
   <input class="inc-path-val" type="text" value="${esc(v)}" placeholder="e.g. ../../freertos/source/portable/GCC/ARM_CM4F" data-browse-id="${browseId}">
   <button class="btn-secondary" title="Browse directory" style="padding:0 6px;min-width:26px;" onclick="browseDirAt('${browseId}','${esc(bgName)}')">&#8230;</button>
   <button class="btn-remove" onclick="this.closest('.inc-path-row').remove();setDirty()" title="Remove">\u2715</button>
+</div>`;
+  }).join('');
+
+  // linker script rows
+  const ldRowsHtml = linkerScripts.map((v, i) => {
+    const browseId = `ldBrowse_static_${p}${i}`;
+    return `<div class="ld-row">
+  <input class="ld-path-val" type="text" value="${esc(v)}" placeholder="../GNU_ARM/linker.ld" data-browse-id="${browseId}">
+  <button class="btn-secondary" title="Browse .ld file" style="padding:0 6px;min-width:26px;" onclick="browseFileAt('${browseId}',${bgName ? `'${esc(bgName)}'` : "''"},{'Linker Scripts':['ld']})">&#8230;</button>
+  <button class="btn-remove" onclick="this.closest('.ld-row').remove();setDirty()" title="Remove">✕</button>
 </div>`;
   }).join('');
 
@@ -1572,6 +1733,14 @@ ${availableFlms.length > 0 ? `<button class="btn-secondary add-btn" onclick="add
 <div class="row">
   <label>Extra LDFLAGS</label>
   <input id="${id('extraLDFlags')}" type="text" value="${esc(s.extraLDFlags)}" placeholder="e.g. -Wl,--wrap=malloc">
+</div>
+<div class="row">
+  <label>Linker Scripts</label>
+  <div style="display:flex;flex-direction:column;gap:0">
+    <p class="hint" style="margin:0 0 4px">Paths relative to the project build directory (e.g. <code>../GNU_ARM/linker.ld</code>). Multiple scripts are linked in order.</p>
+    <div id="${id('ldRows')}">${ldRowsHtml || '<p class="no-items">No linker scripts.</p>'}</div>
+    <button class="btn-secondary add-btn" style="margin-top:4px;align-self:flex-start" onclick="addLinkerScript(${bgName ? `'${esc(bgName)}'` : "''"})">+ Add Linker Script</button>
+  </div>
 </div>
 <div class="row">
   <p class="hint" style="margin:0;line-height:1.7">

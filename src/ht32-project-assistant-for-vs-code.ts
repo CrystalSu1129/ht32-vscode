@@ -6,7 +6,7 @@ import { exec as cpExec, ExecException, ExecOptions } from 'child_process';
 import { XMLParser } from 'fast-xml-parser';
 import { uv2make, regenerateMakefileFlags, parseUvmpw, generateCompileRuleSection, extractDeviceInfoFromUvprojx, getAllPdscPaths, generateStackAnalysis, buildCCDb, writeCCDbFromLists, buildMakefileText, fwlRootFromSourcePath, patchLinkerScriptRom, miscCNeedsRedefine, patchMiscCWeak, ensureStackAnalysisStrong, ensureStackAnalysisWeak } from './tools/uv2make';
 import { ensureToolchain, locateArmGcc, locateMake } from './tools/toolchain';
-import { openSettingsPanel, AutoLoaderEntry, readProjectSettings, writeProjectSettings, scanAdapters } from './tools/settingsWebview';
+import { openSettingsPanel, AutoLoaderEntry, readProjectSettings, writeProjectSettings, scanAdapters, notifySettingsLinkerScriptsChanged } from './tools/settingsWebview';
 import { openCreateProjectPanel, generateProjectFiles } from './tools/createProject';
 import { parseHt32IdeProject, generateMakefile, buildProjectMeta, generateLinkerScript, patchStartupFiles, writeHt32IdeLists, resolveHt32IdePostBuildPath, computeHt32IdeWsRoot, convertHt32IdeProject, Ht32IdeConvertProjectResult } from './tools/ht32ide2make';
 import { StackAnalysisProvider, StackAnalysisTrackerFactory } from './tools/stackAnalysisProvider';
@@ -380,6 +380,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         } else {
           await regenAllMakefileFlags(root, bgDirsArg);  // 只 regen 此 .ht32vs 的 projects
         }
+        tree.refresh();  // linkerScripts / sources 改變後同步更新 TreeView
       }, detectedGcc ?? undefined);
     }),
     vscode.commands.registerCommand('ht32.download', () => smartRunTask('download')),
@@ -1255,7 +1256,7 @@ async function resolveToolchain(
 }
 
 /** FWLib bat 產生的模板專案：有 project.meta.json 但無 Makefile，
- *  從 meta + settings 自動產生 Makefile / sources.list / includes.list / defines.list / compile_commands.json。
+ *  從 meta + settings 自動產生 Makefile / sources.list / includes.list / defines.list / adefines.list / compile_commands.json。
  *  .vscode/ 由呼叫端在此之後呼叫 generateTasksAndLaunch() 產出。 */
 async function initProjectsFromMeta(bgDirs: string[], wsRoot: string): Promise<void> {
   const gccFound = await locateArmGcc();
@@ -1299,11 +1300,15 @@ async function initProjectsFromMeta(bgDirs: string[], wsRoot: string): Promise<v
       const incs = (s.includePaths ?? []).map(p => `-I"${p}"`).join(' ');
       fs.writeFileSync(path.join(bgDir, 'includes.list'), incs);
 
-      // 4. 產生 defines.list（-DXXX 格式；cDefs 已含 C + ASM defines，與 uVision collectAll 行為一致）
+      // 4. 產生 defines.list（C defines）
       const defs = (s.cDefs ?? []).map(d => `-D${d}`).join(' ');
       fs.writeFileSync(path.join(bgDir, 'defines.list'), defs);
 
-      // 5. 產生 compile_commands.json
+      // 5. 產生 adefines.list（assembler-only defines，例如 USE_HT32_CHIP；startup .s 透過 -x assembler-with-cpp 讀取）
+      const adefs = (s.aDefs ?? []).map(d => `-D${d}`).join(' ');
+      fs.writeFileSync(path.join(bgDir, 'adefines.list'), adefs);
+
+      // 6. 產生 compile_commands.json
       writeCCDbFromLists(bgDir, {
         gccFullPath: gcc ?? undefined,
         armCore:     s.mcu ?? 'cortex-m3',
@@ -1348,7 +1353,7 @@ async function autoAttachProjectFromWorkspace(ctx: vscode.ExtensionContext, tree
           }
         }
       } catch { /* non-critical */ }
-      // 每次開啟專案都重新產生 Makefile / sources.list / includes.list / defines.list
+      // 每次開啟專案都重新產生 Makefile / sources.list / includes.list / defines.list / adefines.list
       // 確保與 project.meta.json + project.settings.json 保持一致
       try {
         const bgNames    = (readProjectOrder(parent) ?? fs.readdirSync(parent)).filter(d => isBgDir(parent, d));
@@ -4658,6 +4663,7 @@ function registerTreeEditCommands(
         existingLd.add(path.relative(buildGenDir, u.fsPath).replace(/\\/g, '/'));
       }
       meta.linkerScripts = Array.from(existingLd);
+      notifySettingsLinkerScriptsChanged(path.basename(buildGenDir), meta.linkerScripts);
     }
 
     updateProjectMeta(buildGenDir, meta);
@@ -4744,6 +4750,7 @@ function registerTreeEditCommands(
     if (filePath.toLowerCase().endsWith('.ld') && meta.linkerScripts) {
       const ldRel = path.relative(buildGenDir, path.resolve(path.dirname(path.dirname(buildGenDir)), filePath)).replace(/\\/g, '/');
       meta.linkerScripts = meta.linkerScripts.filter((s: string) => s !== ldRel);
+      notifySettingsLinkerScriptsChanged(path.basename(buildGenDir), meta.linkerScripts);
     }
     updateProjectMeta(buildGenDir, meta);
     tree.refresh();
@@ -4779,6 +4786,7 @@ function registerTreeEditCommands(
       if (filePath.toLowerCase().endsWith('.ld') && meta.linkerScripts) {
         const ldRel = path.relative(buildGenDir, path.resolve(path.dirname(path.dirname(buildGenDir)), filePath)).replace(/\\/g, '/');
         meta.linkerScripts = meta.linkerScripts.filter((s: string) => s !== ldRel);
+        notifySettingsLinkerScriptsChanged(path.basename(buildGenDir), meta.linkerScripts);
       }
       updateProjectMeta(buildGenDir, meta);
     }
