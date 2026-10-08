@@ -246,4 +246,13 @@ Extension 的 `afterbuild/` 目錄內附帶最新版的 Post-Build 腳本（`aft
 
 Primary bat 的同層目錄也會被掃描——`dfumaker_combo.bat` 等常與 `afterbuild_ap.bat` 同放的兄弟 bat，若名稱在清單內，套用相同規則。
 
+**取代時的 key 同步**：備份 + 取代（`$Rev` ≤ 上限）時，會從舊 bat 中尋找以下 key，若找到則將其值同步到新 bat，找不到則略過（不限定 bat 檔名，但這些 key 目前只出現在 `srec_make_combo.bat`）：
+
+```
+APSEQ  APSAVE_ENDADDR  BIN_OFFSET  CMP_RESULT  SHOW_CRC_CHECK_MSG
+HEX_ENCODE  AP_ENCRYPT  AP_TPMAKER  AP_SINGLE_BIN  CRC32
+```
+
+直接複製（bat 不存在）時不做 key 同步，新 bat 使用 bundled 預設值。
+
 

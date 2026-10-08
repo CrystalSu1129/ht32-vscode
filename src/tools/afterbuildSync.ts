@@ -27,6 +27,30 @@ function readBatRevision(content: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
+/** Keys that may carry user-configured values across a bat update. */
+const USER_SYNC_KEYS = [
+  'APSEQ', 'APSAVE_ENDADDR', 'BIN_OFFSET', 'CMP_RESULT',
+  'SHOW_CRC_CHECK_MSG', 'HEX_ENCODE', 'AP_ENCRYPT',
+  'AP_TPMAKER', 'AP_SINGLE_BIN', 'CRC32',
+];
+
+/**
+ * Copy user-configured SET KEY=VALUE lines from oldContent into newContent.
+ * Only keys present in both files are touched; missing keys are skipped.
+ */
+function syncBatUserKeys(oldContent: string, newContent: string): string {
+  let result = newContent;
+  for (const key of USER_SYNC_KEYS) {
+    const oldMatch = new RegExp(`^([ \\t]*SET[ \\t]+${key}[ \\t]*=)(.*)$`, 'im').exec(oldContent);
+    if (!oldMatch) continue;
+    result = result.replace(
+      new RegExp(`^([ \\t]*SET[ \\t]+${key}[ \\t]*=)(.*)$`, 'im'),
+      (_match, prefix) => `${prefix}${oldMatch[2]}`
+    );
+  }
+  return result;
+}
+
 /**
  * Extract the first bat-path token from a postBuildCmd string.
  * Strips "cmd[.exe] /c" prefix if present; handles quoted paths.
@@ -74,7 +98,7 @@ function syncOneBat(
   const bundledPath    = path.join(afterbuildDir, bundledName);
   const bundledContent = fs.readFileSync(bundledPath, 'utf8');
 
-  // Case a: file doesn't exist → copy from bundled
+  // Case a: file doesn't exist → copy from bundled (use bundled defaults, no user values to preserve)
   if (!fs.existsSync(batAbs)) {
     fs.mkdirSync(path.dirname(batAbs), { recursive: true });
     fs.writeFileSync(batAbs, bundledContent);
@@ -99,7 +123,7 @@ function syncOneBat(
   const backupPath = batAbs + '.bak';
   fs.writeFileSync(backupPath, existingContent);
 
-  fs.writeFileSync(batAbs, bundledContent);
+  fs.writeFileSync(batAbs, syncBatUserKeys(existingContent, bundledContent));
   return {
     action:  'updated',
     batPath: batAbs,

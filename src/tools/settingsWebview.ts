@@ -1176,12 +1176,15 @@ function collectProjectSettings(bgName) {
 }
 
 function switchTab(bgName, tab) {
-  var p = bgName ? bgName + '__' : '';
-  ['compiler', 'linker', 'debugger', 'build'].forEach(function(t) {
-    var panel = document.getElementById(p + 'tab_' + t);
-    var btn   = document.getElementById(p + 'tabBtn_' + t);
-    if (panel) panel.classList.toggle('active', t === tab);
-    if (btn)   btn.classList.toggle('active', t === tab);
+  var targets = BG_NAMES.length > 0 ? BG_NAMES : [''];
+  targets.forEach(function(bg) {
+    var prefix = bg ? bg + '__' : '';
+    ['compiler', 'linker', 'debugger', 'build'].forEach(function(t) {
+      var panel = document.getElementById(prefix + 'tab_' + t);
+      var btn   = document.getElementById(prefix + 'tabBtn_' + t);
+      if (panel) panel.classList.toggle('active', t === tab);
+      if (btn)   btn.classList.toggle('active', t === tab);
+    });
   });
 }
 
