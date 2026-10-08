@@ -468,6 +468,7 @@ int main(void) {
 | Search Paths (-L) | 函式庫搜尋路徑（`-L"dir"`） |
 | Extra LDFLAGS | 附加連結旗標 |
 | Linker Scripts | 連結腳本路徑（相對於 build 目錄） |
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-3.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 ---
 
@@ -505,6 +506,8 @@ int main(void) {
 | Post-Build | Build 後執行的命令（工作目錄：`${workspaceFolder}` = `HT32_VSCode/`） |
 | GCC Path | `arm-none-eabi-gcc` 路徑（空白 = 自動偵測或 winget 安裝） |
 | OpenOCD Path | OpenOCD 路徑（空白 = 使用內建 OpenOCD） |
+
+<img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-4.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 > 工具鏈路徑（GCC / OpenOCD）儲存於 VS Code 機器設定，**所有專案共用**，僅顯示於第一個專案的 Build 分頁。
 

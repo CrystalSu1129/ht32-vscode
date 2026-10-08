@@ -320,17 +320,26 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('ht32.updateFromMarketplace', async () => {
       const current = ctx.extension.packageJSON.version as string;
+      CHANNEL.show(true);
+      logInfo(`[Update] Checking for updates… (current: v${current})`);
       const sb = vscode.window.setStatusBarMessage('$(sync~spin) Checking for updates…');
       try {
         const latest = await fetchMarketplaceVersion('holtek.ht32-vscode');
-        if (latest === current) {
+        logInfo(`[Update] Marketplace version: v${latest}`);
+        if (semverCmp(latest, current) <= 0) {
           vscode.window.showInformationMessage(`Holtek HT32 VS Code Extension is already up to date (v${current}).`);
         } else {
-          vscode.window.showInformationMessage(`Updating Holtek HT32 VS Code Extension: v${current} → v${latest}`);
-          vscode.commands.executeCommand('workbench.extensions.installExtension', 'holtek.ht32-vscode');
+          logInfo(`[Update] Installing v${latest}…`);
+          await vscode.commands.executeCommand('workbench.extensions.installExtension', 'holtek.ht32-vscode');
+          logInfo(`[Update] Done.`);
+          vscode.window.showInformationMessage(`Holtek HT32 VS Code Extension updated to v${latest}.`, 'Reload Now').then(sel => {
+            if (sel === 'Reload Now') vscode.commands.executeCommand('workbench.action.reloadWindow');
+          });
         }
-      } catch {
-        vscode.window.showErrorMessage('Failed to check for updates. Please check your network connection.');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logError(`[Update] ${msg}`);
+        vscode.window.showErrorMessage(`Failed to check for updates: ${msg}`);
       } finally {
         sb.dispose();
       }
@@ -341,8 +350,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
         filters: { 'VSIX Package': ['vsix'] },
         title: 'Select VSIX to Install'
       });
-      if (files?.[0]) {
-        vscode.commands.executeCommand('workbench.extensions.installExtension', files[0]);
+      if (!files?.[0]) return;
+      CHANNEL.show(true);
+      logInfo(`[VSIX] Installing: ${files[0].fsPath}`);
+      try {
+        await vscode.commands.executeCommand('workbench.extensions.installExtension', files[0]);
+        logInfo('[VSIX] Done.');
+        vscode.window.showInformationMessage('Extension installed.', 'Reload Now').then(sel => {
+          if (sel === 'Reload Now') vscode.commands.executeCommand('workbench.action.reloadWindow');
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logError(`[VSIX] ${msg}`);
+        vscode.window.showErrorMessage(`Failed to install VSIX: ${msg}`);
       }
     }),
     vscode.commands.registerCommand('ht32.convertUvision', () => convertUvision(ctx, tree, treeView)),
@@ -2124,8 +2144,8 @@ async function convertHt32Ide(ctx: vscode.ExtensionContext, tree: ProjectTreePro
     if (convResults.length > 1) {
       for (const r of convResults) {
         const subName = path.basename(r.bgDir);
-        const projFile = writeOrUpdateProjectFile(bgParent(ideWsOpenRoot), [subName], subName);
-        await addRecentProject(ctx, projFile);
+        // Not added to recent — the merged .ht32vs below is the single recent entry.
+        writeOrUpdateProjectFile(bgParent(ideWsOpenRoot), [subName], subName);
       }
     }
     {

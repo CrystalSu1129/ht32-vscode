@@ -49,7 +49,7 @@ A VS Code extension for **Holtek HT32** series Cortex-M microcontrollers (M0+/M3
 **Option A — From VSIX**
 
 1. VS Code → Extensions → `...` → **Install from VSIX...**
-2. Select `ht32-proj-assistant-x.x.x.vsix`
+2. Select `ht32-vscode-x.x.x.vsix`
 
 > **Note:** VS Code resolves extension dependencies from the Marketplace automatically.
 > If a required dependency is not published on the Marketplace, the installation will fail.
@@ -263,7 +263,6 @@ For `.uvmpw`, **all sub-projects are converted at once**, each into its own fold
 ```
 <ProjectRoot>/
 ├── MDK_ARMv5/             ← original Keil projects
-├── .clangd                ← auto-generated on project open (clangd config)
 └── HT32_VSCode/           ← VS Code workspace root
     ├── .vscode/
     │   ├── tasks.json
@@ -463,6 +462,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has four tabs.
 | Search Paths (-L) | Library search directories (`-L"dir"`) |
 | Extra LDFLAGS | Additional linker flags |
 | Linker Scripts | Linker script paths relative to the build directory |
+<img src="media/15-3.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 ---
 
@@ -477,10 +477,10 @@ Open via the **Settings** button in the HT32 toolbar. The panel has four tabs.
 | Adapter Serial | Specify probe serial (blank = auto) |
 | Adapter Speed | Transfer rate in kHz (blank = interface default) |
 | Debug Level | 1–4 = increasing verbosity (default 1) |
-| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; |
 | DFP Path | Custom DFP path for SVD auto-detection |
 | SVD File | Peripheral register SVD file (blank = auto-detect) |
 | Erase Mode | `erase_sector` (default) / `erase_chip` |
+| Smart Flash | (PyOCD only) Skip unchanged pages for faster repeated download; |
 | Flash Loaders | Add external flash loaders (e.g. SPI Flash) |
 
 <img src="media/17.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
@@ -500,6 +500,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has four tabs.
 | Post-Build Command | Command to run after a successful build (working dir: `${workspaceFolder}` = `HT32_VSCode/`) |
 | GCC Path | `arm-none-eabi-gcc` path (blank = auto-detect) — machine-wide |
 | OpenOCD Path | OpenOCD path (blank = use bundled OpenOCD) — machine-wide |
+<img src="media/15-4.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 
 > Toolchain paths (GCC / OpenOCD) are stored in VS Code User Settings and **shared across all projects** — shown only in the first project's Build tab.
 
@@ -538,8 +539,6 @@ Open via the **Settings** button in the HT32 toolbar. The panel has four tabs.
 | Number (`<o>` with range) | Enter value within allowed range |
 | Enable Section (`<e>`) | Master switch that enables/disables a group of settings |
 | Heading (`<h>`) | Collapsible group |
-
-Changes are written back to the source file immediately; only the modified value is updated — all comments and surrounding code are preserved.
 
 ---
 
