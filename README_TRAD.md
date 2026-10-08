@@ -433,31 +433,41 @@ int main(void) {
 
 ## 專案設定
 
-點擊工具列的 **Settings** 開啟設定面板，面板分為三個分頁：
+點擊工具列的 **Settings** 開啟設定面板，面板分為四個分頁：
 
 ### Compiler 分頁
 
 | 設定項目 | 說明 |
 |----------|------|
-| Output Filename | 自訂輸出檔名（留空則沿用轉換時的名稱） |
 | Optimization | `-O0` / `-O1` / `-O2` / `-O3` / `-Os`（預設）/ `-Og` |
 | Debug Info | `-g3`（預設，完整 debug）/ `-g`（標準）/ `-g1`（僅行號）/ `-g0`（無，release 用）|
 | Float ABI | `soft`（M0/M3）/ `softfp` / `hard`（M4F） |
 | FPU | `none` / `fpv4-sp-d16`（M4F）/ `fpv5-sp-d16`（M7）/ `fpv5-d16`（M7） |
-| C Runtime Library | `nano`（newlib-nano）/ `nosys`（不使用 syscalls）— 可同時勾選 |
-| printf float | 啟用浮點 printf（`-u _printf_float`） |
-| scanf float | 啟用浮點 scanf（`-u _scanf_float`） |
 | LTO | 啟用 `-flto` |
-| Libraries (-l) | 要連結的函式庫名稱（`-lName`） |
-| Search Paths (-L) | 函式庫搜尋路徑（`-L"dir"`） |
 | Include Paths | 所有 `-I` 搜尋路徑，寫入 `includes.list`；轉換時自動填入，可在此新增額外路徑 |
 | C Defines | 前置處理器定義，寫入 `defines.list`；轉換時自動填入，可在此新增額外定義 |
 | ASM Defines | 組譯器前置處理器定義，寫入 `adefines.list`；轉換時自動填入，可在此新增額外定義 |
 | Extra CFLAGS | 附加編譯旗標，例如 `-DDEBUG` |
-| Extra LDFLAGS | 附加連結旗標 |
 
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-1.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="https://raw.githubusercontent.com/ht32-holtek/ht32-vscode/main/media/15-2.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+
+---
+
+<br>
+
+### Linker 分頁
+
+| 設定項目 | 說明 |
+|----------|------|
+| Dead Code Elimination | 啟用 `-ffunction-sections -fdata-sections -Wl,--gc-sections`（預設開啟）— 移除未使用的函式與資料 |
+| C Runtime Library | `nano`（newlib-nano）/ `nosys`（不使用 syscalls）— 可同時勾選 |
+| printf float | 啟用浮點 printf（`-u _printf_float`） |
+| scanf float | 啟用浮點 scanf（`-u _scanf_float`） |
+| Libraries (-l) | 要連結的函式庫名稱（`-lName`） |
+| Search Paths (-L) | 函式庫搜尋路徑（`-L"dir"`） |
+| Extra LDFLAGS | 附加連結旗標 |
+| Linker Scripts | 連結腳本路徑（相對於 build 目錄） |
 
 ---
 
@@ -491,6 +501,7 @@ int main(void) {
 
 | 設定項目 | 說明 |
 |----------|------|
+| Output Filename | 自訂輸出檔名（留空則沿用轉換時的名稱） |
 | Post-Build | Build 後執行的命令（工作目錄：`${workspaceFolder}` = `HT32_VSCode/`） |
 | GCC Path | `arm-none-eabi-gcc` 路徑（空白 = 自動偵測或 winget 安裝） |
 | OpenOCD Path | OpenOCD 路徑（空白 = 使用內建 OpenOCD） |
@@ -572,6 +583,8 @@ int main(void) {
 | `HT32: Close Project` | 關閉目前載入的專案 |
 | `HT32: Clear Recent Projects` | 清除最近開啟清單 |
 | `HT32: Refresh Stack Usage` | 手動刷新 Stack Usage Analysis 面板 |
+| `HT32: Update Extension (Online)` | 從 VS Code Marketplace 檢查新版本並自動安裝 |
+| `HT32: Install Extension from VSIX` | 開啟檔案選擇器，安裝本機 `.vsix` 套件 |
 
 ---
 

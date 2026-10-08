@@ -219,4 +219,31 @@ FWLib 前綴從 `library/HT32*_Driver` 目錄名推算：`HT32F5xxxx_Driver` →
 | `libraries/cmsis/cm4/core_support/` | CMSIS core header 找不到 |
 | `libraries/cmsis/cm4/device_support/` | CMSIS device header 找不到 |
 
+---
+
+## misc.c 的 weak patch（Stack Usage Analysis）
+
+**問題**：FWLib 2025-12-02 以前的版本，`ht32_cm*_misc.c` 的 `StackUsageAnalysisInit` 在 GCC 分支定義為強符號（無 `__attribute__((weak))`），與 bundled `ht32_stack_analysis.c` 的強符號衝突，導致 multiple definition 連結錯誤。
+
+**處理方式**：Convert / Open Project 時，若偵測到 misc.c 的 `@date` 欄位 ≤ 2025-12-02，自動在原始檔案加上 `weak` attribute（idempotent，不重複修改）。`ht32_stack_analysis.c` 本身維持強符號，確保 Stack Analysis 功能可正常覆蓋 misc.c 的空實作。
+
+---
+
+## afterbuild.bat 自動同步
+
+Extension 的 `afterbuild/` 目錄內附帶最新版的 Post-Build 腳本（`afterbuild.bat`、`afterbuild_ap.bat`、`afterbuild_iap.bat`、`dfumaker_combo.bat`、`srec_make_combo.bat`）。
+
+**觸發時機**：Save Settings 時，若 `postBuildCmd` 指向上述清單內的 bat。
+
+**版本比對規則**（以 bat 內的 `$Rev::` 號碼為準）：
+
+| 磁碟上的 bat 狀況 | 動作 |
+|---|---|
+| 不存在 | 直接從 bundled 複製 |
+| `$Rev` ≤ `MAX_REPLACEABLE_REV`（各 bat 有獨立上限）| 備份為 `.bak` 後取代 |
+| `$Rev` > 上限 | 跳過（視為使用者已自訂，不覆蓋） |
+| bat 名稱不在清單內 | 完全不處理 |
+
+Primary bat 的同層目錄也會被掃描——`dfumaker_combo.bat` 等常與 `afterbuild_ap.bat` 同放的兄弟 bat，若名稱在清單內，套用相同規則。
+
 

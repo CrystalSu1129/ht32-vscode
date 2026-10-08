@@ -577,7 +577,7 @@ export function resolveHt32IdePostBuildPath(cmd: string, wsRoot: string, srcRoot
 // Makefile generation
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: string, extraCFlags?: string): string {
+export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: string, extraCFlags?: string, gcSections?: boolean): string {
   // ── Cross-drive check ──────────────────────────────────────────────────────
   const bgDrive = path.parse(bgDir).root.toUpperCase();
   for (const s of result.sources) {
@@ -633,6 +633,7 @@ export function generateMakefile(result: Ht32IdeResult, bgDir: string, gccPath: 
     scanfFloat:        result.scanfFloat,
     extraLibPaths:     (result.extraLibPaths ?? []).map(toBgRel),
     extraLibNames:     result.extraLibNames,
+    gcSections:        gcSections !== false,
     extraCFlags:       extraCFlags || '-std=gnu11',
     comment:           'Converted from HT32-IDE.',
   });
@@ -1093,7 +1094,8 @@ export function convertHt32IdeProject(
     ...(idePostBuildCmd ? { postBuildCmd: idePostBuildCmd } : {}),
   });
 
-  fs.writeFileSync(path.join(bgDir, 'Makefile'), generateMakefile(patchedResult, bgDir, gccPath, effectiveExtraCFlags));
+  const gcSections = _existingSettings.gcSections;
+  fs.writeFileSync(path.join(bgDir, 'Makefile'), generateMakefile(patchedResult, bgDir, gccPath, effectiveExtraCFlags, gcSections));
   writeHt32IdeLists(bgDir, patchedResult);
 
   writeCCDbFromLists(bgDir, {
@@ -1101,6 +1103,7 @@ export function convertHt32IdeProject(
     fpu:          fpuFinal || undefined,
     floatAbi:     floatAbiFinal,
     optimization: patchedResult.optimization || 'Os',
+    gcSections,
   });
 
   const baseMeta = buildProjectMeta(patchedResult, wsRoot);

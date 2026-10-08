@@ -1314,6 +1314,7 @@ async function initProjectsFromMeta(bgDirs: string[], wsRoot: string): Promise<v
         useLto:            s.useLto,
         printfFloat:       s.printfFloat,
         scanfFloat:        s.scanfFloat,
+        gcSections:        s.gcSections,
         extraCFlags:       s.extraCFlags,
         extraLDFlags:      s.extraLDFlags,
         extraLibs:         s.extraLibs,
@@ -1340,6 +1341,7 @@ async function initProjectsFromMeta(bgDirs: string[], wsRoot: string): Promise<v
         floatAbi:    s.floatAbi,
         optimization: s.optimizationLevel,
         debugInfo:   s.debugInfo,
+        gcSections:  s.gcSections,
       });
     } catch (e: any) { logError(`initProjectsFromMeta(${bgDir}): ${e?.message ?? e}`); }
   }
@@ -2311,6 +2313,7 @@ async function regenerateCompileCommandsCommand() {
       floatAbi: ps.floatAbi as any || undefined,
       optimization: 'Os',
       gccFullPath: gccPath ?? undefined,
+      gcSections:  ps.gcSections,
     });
 
     writeMakefileToolsSettings(root, bgDirs, gccPath ?? undefined);
@@ -4359,6 +4362,7 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
         useLto:                bgProjSettings.useLto               ?? false,
         printfFloat:           bgProjSettings.printfFloat          ?? false,
         scanfFloat:            bgProjSettings.scanfFloat           ?? false,
+        gcSections:            bgProjSettings.gcSections,
         cDefs:           bgProjSettings.cDefs,
         aDefs:           bgProjSettings.aDefs,
         outputName:      bgProjSettings.outputName?.trim() || undefined,
@@ -4371,6 +4375,7 @@ async function regenAllMakefileFlags(root: string, limitToBgs?: Array<{name: str
         optimization: bgProjSettings.optimizationLevel || undefined,
         debugInfo:    bgProjSettings.debugInfo || undefined,
         gccFullPath:  gccPathForCCDb ?? undefined,
+        gcSections:   bgProjSettings.gcSections,
       });
     } catch (e: any) {
       logWarn(`regenAllMakefileFlags: ${bg}: ${e?.message ?? e}`);
@@ -4553,6 +4558,7 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
         useLto:            bgProjSettings.useLto             ?? false,
         printfFloat:       bgProjSettings.printfFloat        ?? false,
         scanfFloat:        bgProjSettings.scanfFloat         ?? false,
+        gcSections:        bgProjSettings.gcSections,
         includePaths:      bgProjSettings.includePaths       ?? [],
         outputName:        bgProjSettings.outputName?.trim() || undefined,
       });
@@ -4561,15 +4567,15 @@ function updateProjectMeta(buildGenDir: string, meta: Meta, opts?: { skipElfInva
 
   // 5. Regenerate compile_commands.json so IntelliSense reflects the new file list
   try {
-    const bmForCc = readProjectSettings(buildGenDir);
     const gccForCCDb = vscode.workspace.getConfiguration('ht32').get<string>('gccPath') || undefined;
     writeCCDbFromLists(buildGenDir, {
-      armCore:     bmForCc.mcu || 'cortex-m0plus',
-      fpu:         (bmForCc.fpu && bmForCc.fpu !== 'none') ? bmForCc.fpu : undefined,
-      floatAbi:    bmForCc.floatAbi as any || undefined,
-      optimization: bmForCc.optimizationLevel || undefined,
-      debugInfo:   bmForCc.debugInfo || undefined,
+      armCore:     bgProjSettings.mcu || 'cortex-m0plus',
+      fpu:         (bgProjSettings.fpu && bgProjSettings.fpu !== 'none') ? bgProjSettings.fpu : undefined,
+      floatAbi:    bgProjSettings.floatAbi as any || undefined,
+      optimization: bgProjSettings.optimizationLevel || undefined,
+      debugInfo:   bgProjSettings.debugInfo || undefined,
       gccFullPath: gccForCCDb ?? undefined,
+      gcSections:  bgProjSettings.gcSections,
     });
   } catch (e) {
     logWarn(`updateProjectMeta: compile_commands.json update failed: ${e}`);

@@ -1518,7 +1518,8 @@ export async function generateProjectFiles(
     startupFile: startupFileForMakefile,
   });
   const isLib = outputType === 'lib';
-  fs.writeFileSync(path.join(bgDir, 'Makefile'), buildMakefileFromProjectSettings(readProjectSettings(bgDir), {
+  const ps = readProjectSettings(bgDir);
+  fs.writeFileSync(path.join(bgDir, 'Makefile'), buildMakefileFromProjectSettings(ps, {
     cc:            gccResolved,
     srcs:          allSrcs,
     linkerScripts: isLib ? [] : [ldRelPath ?? 'GNU_ARM/linker.ld'],
@@ -1535,9 +1536,10 @@ export async function generateProjectFiles(
   // compile_commands.json — read from .list files (written above) to stay in sync
   writeCCDbFromLists(bgDir, {
     armCore,
-    fpu:      hasFpuHw ? 'fpv4-sp-d16' : undefined,
-    floatAbi: hasFpuHw ? 'hard' : 'soft',
+    fpu:        hasFpuHw ? 'fpv4-sp-d16' : undefined,
+    floatAbi:   hasFpuHw ? 'hard' : 'soft',
     optimization: 'Os',
+    gcSections: ps.gcSections,
   });
 
   // project.meta.json — paths relative to workspace root (or absolute for FWLib)

@@ -70,6 +70,8 @@ export type Uv2MakeOptions = {
   printfFloat?:  boolean;
   /** -u _scanf_float：newlib-nano float scanf */
   scanfFloat?:   boolean;
+  /** -ffunction-sections -fdata-sections -Wl,--gc-sections：dead code elimination */
+  gcSections?:   boolean;
   /** VS Code extension root，用於查詢 bundled PDSC (dfp/) */
   extPath?: string;
   /** Additional PDSC paths (user-provided, searched before bundled DFP) */
@@ -2253,6 +2255,7 @@ export interface UnifiedMakefileParams {
   useLto?:       boolean;
   printfFloat?:  boolean;
   scanfFloat?:   boolean;
+  gcSections?:   boolean;
   extraCFlags?:  string;
   extraLDFlags?: string;
   extraLibs?:    string[];
@@ -2285,9 +2288,12 @@ export function buildMakefileText(p: UnifiedMakefileParams): string {
   const adefsLine    = `ADEFS := $(file <adefines.list)\n`;
   const adefsInFlags = ' $(ADEFS)';
 
+  const gcSections = p.gcSections !== false;
+  const gcCFlags   = gcSections ? ' -ffunction-sections -fdata-sections' : '';
+  const gcLDFlags  = gcSections ? '--gc-sections,' : '';
   const ldTFlags   = p.linkerScripts.map(s => `-T "${s}"`).join(' ');
   const ldDepList  = p.linkerScripts.join(' ');
-  const ldFlags    = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(p.useNano ?? true, p.useNosys ?? true)}${extraLDFStr}${ltoFlag}${printfF}${scanfF}`;
+  const ldFlags    = `-Wl,${gcLDFlags}--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(p.useNano ?? true, p.useNosys ?? true)}${extraLDFStr}${ltoFlag}${printfF}${scanfF}`;
 
   const cleanSrcs  = p.srcs.filter(s => !s.includes(' '));
   const spacedSrcs = p.srcs.filter(s =>  s.includes(' '));
@@ -2340,7 +2346,7 @@ SIZE    := ${tcPrefix}size
 INCS := $(file <includes.list)
 DEFS := $(file <defines.list)
 ${adefsLine}
-CFLAGS  := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${extraCF}${ltoFlag}
+CFLAGS  := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} ${opt} ${dbgFlag}${gcCFlags} "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${extraCF}${ltoFlag}
 ASFLAGS := -mcpu=${p.mcu} -mthumb${fpuFlags}${floatAbi} -x assembler-with-cpp "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${adefsInFlags}
 ${p.isLibrary ? '' : `LDFLAGS := ${ldFlags}\n`}
 # ---- Sources (managed by project tree via meta.groups) ----
@@ -2433,6 +2439,7 @@ export function buildMakefileFromProjectSettings(
     useLto:            settings.useLto,
     printfFloat:       settings.printfFloat,
     scanfFloat:        settings.scanfFloat,
+    gcSections:        settings.gcSections,
     extraCFlags:       settings.extraCFlags || undefined,
     extraLDFlags:      settings.extraLDFlags || undefined,
     extraLibs:         (settings.extraLibs   ?? []).filter(Boolean),
@@ -2494,6 +2501,7 @@ export function buildCCDb(opts: {
   includes:     string[];  // bgDir-relative or absolute paths (forward or back slash)
   absSources:   string[];  // absolute paths — filtered to .c/.cpp internally
   isystemPaths?: string[]; // prepended as -isystem flags after --target=arm-none-eabi
+  gcSections?:  boolean;
 }): CCEntry[] {
   const compiler = opts.compiler || 'arm-none-eabi-gcc';
   const fwdDir   = opts.bgDir.replace(/\\/g, '/');
@@ -2506,7 +2514,7 @@ export function buildCCDb(opts: {
     ...fpuFlags,
     `-${opts.optimization}`,
     `-${opts.debugInfo ?? 'g3'}`,
-    '-ffunction-sections', '-fdata-sections',
+    ...(opts.gcSections !== false ? ['-ffunction-sections', '-fdata-sections'] : []),
   ];
   const defFlags = opts.defines.map(d => `-D${d}`);
   const incFlags = opts.includes.map(p => `-I${p.replace(/\\/g, '/')}`);
@@ -2534,6 +2542,7 @@ export function writeCCDbFromLists(bgDir: string, opts: {
   optimization?: string;
   debugInfo?:   string;
   gccFullPath?: string;
+  gcSections?:  boolean;
 }): void {
   const gccFull = opts.gccFullPath?.replace(/\\/g, '/');
   const compiler = gccFull ?? opts.compiler;
@@ -2557,6 +2566,7 @@ export function writeCCDbFromLists(bgDir: string, opts: {
     floatAbi:     opts.floatAbi,
     optimization: opts.optimization || 'Os',
     debugInfo:    opts.debugInfo    || 'g3',
+    gcSections:   opts.gcSections,
     defines, includes, absSources,
     isystemPaths,
   });
@@ -2573,6 +2583,7 @@ function writeCompileCommands(outDir: string, opts: { cc?: string; mcu?: string;
     floatAbi:     opts.floatAbi,
     optimization: s.optimizationLevel || 'Os',
     debugInfo:    s.debugInfo || 'g3',
+    gcSections:   s.gcSections,
   });
 }
 
@@ -3067,7 +3078,7 @@ export function regenerateMakefileFlags(
   outDir: string,
   meta: BuildMeta,
   opts: Pick<Uv2MakeOptions, 'optimizationLevel' | 'debugInfo' | 'useNano' | 'useNosys' | 'extraCFlags' | 'extraLDFlags' | 'extraLibs' | 'extraLibNames' | 'extraLibPaths' | 'fpu' | 'floatAbi'
-    | 'useLto' | 'printfFloat' | 'scanfFloat' | 'includePaths'> & { outputName?: string; cDefs?: string[]; aDefs?: string[]; cc?: string }
+    | 'useLto' | 'printfFloat' | 'scanfFloat' | 'gcSections' | 'includePaths'> & { outputName?: string; cDefs?: string[]; aDefs?: string[]; cc?: string }
 ): void {
   const makefilePath = path.join(outDir, 'Makefile');
   if (!fs.existsSync(makefilePath)) {
@@ -3096,7 +3107,10 @@ export function regenerateMakefileFlags(
   const extraLDFParts = [opts.extraLDFlags?.trim(), extraLibsStr, libPathsStr, libNamesStr].filter(Boolean).join(' ');
   const extraLDF = extraLDFParts ? ` ${extraLDFParts}` : '';
 
-  const newCFlags  = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} ${opt} ${dbgFlag} -ffunction-sections -fdata-sections "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${extraCF}${ltoFlag}`;
+  const gcSections  = opts.gcSections !== false;
+  const gcCFlags    = gcSections ? ' -ffunction-sections -fdata-sections' : '';
+  const gcLDFlags   = gcSections ? '--gc-sections,' : '';
+  const newCFlags   = `-mcpu=${mcu} -mthumb${fpuFlags}${floatAbiFlag} ${opt} ${dbgFlag}${gcCFlags} "-ffile-prefix-map=$(CURDIR)=." $(INCS) $(DEFS)${extraCF}${ltoFlag}`;
 
   let content = fs.readFileSync(makefilePath, 'utf8');
 
@@ -3112,7 +3126,7 @@ export function regenerateMakefileFlags(
     ? linkerScripts.map(s => `-T "${s}"`).join(' ')
     : '-T "linker_script.ld"';
 
-  const newLDFlags = `-Wl,--gc-sections,--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(opts.useNano, opts.useNosys)}${extraLDF}${ltoFlag}${printfF}${scanfF}`;
+  const newLDFlags = `-Wl,${gcLDFlags}--print-memory-usage$(LD_NO_WARN),-Map,$(BUILD)/$(TARGET).map ${ldTFlags}${specsFlags(opts.useNano, opts.useNosys)}${extraLDF}${ltoFlag}${printfF}${scanfF}`;
 
   // Upgrade old Makefiles that predate LD_NO_WARN dynamic detection.
   // Note: in the template, LD_NO_WARN is indented inside ifeq — must not anchor to ^.

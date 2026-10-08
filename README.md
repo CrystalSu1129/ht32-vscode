@@ -428,31 +428,41 @@ Without both steps the **Peak Usage** row shows a reminder instead of a value.
 
 ## Project Settings
 
-Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
+Open via the **Settings** button in the HT32 toolbar. The panel has four tabs.
 
 ### Compiler Tab
 
 | Setting | Options |
 |---------|---------|
-| Output Filename | Custom output filename for the generated `.elf` / `.a` (leave empty to keep the converted name) |
 | Optimization | `-O0` / `-O1` / `-O2` / `-O3` / `-Os` (default) / `-Og` |
 | Debug Info | `-g3` (default, full debug) / `-g` (standard) / `-g1` (line numbers only) / `-g0` (none, for release) |
 | Float ABI | `soft` (M0/M3) / `softfp` / `hard` (M4F) |
 | FPU | `none` / `fpv4-sp-d16` (M4F) / `fpv5-sp-d16` (M7) / `fpv5-d16` (M7) |
-| C Runtime Library | `nano` (newlib-nano) / `nosys` — can combine both |
-| printf float | Enable floating-point printf (`-u _printf_float`) |
-| scanf float | Enable floating-point scanf (`-u _scanf_float`) |
 | LTO | Enable `-flto` |
-| Libraries (-l) | Library names to link (`-lName`) |
-| Search Paths (-L) | Library search directories (`-L"dir"`) |
 | Include Paths | All `-I` paths written to `includes.list` — auto-populated at conversion; add extra paths here |
 | C Defines | Preprocessor defines written to `defines.list` — auto-populated at conversion; add extra defines here |
 | ASM Defines | Assembler preprocessor defines written to `adefines.list` — auto-populated at conversion; add extra defines here |
 | Extra CFLAGS | Additional compiler flags, e.g. `-DDEBUG` |
-| Extra LDFLAGS | Additional linker flags |
 
 <img src="media/15-1.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
 <img src="media/15-2.jpg" width="500" style="border:1px solid #ccc; border-radius:4px; padding:3px;">
+
+---
+
+<br>
+
+### Linker Tab
+
+| Setting | Options |
+|---------|---------|
+| Dead Code Elimination | Enable `-ffunction-sections -fdata-sections -Wl,--gc-sections` (default: on) — removes unused functions and data at link time |
+| C Runtime Library | `nano` (newlib-nano) / `nosys` — can combine both |
+| printf float | Enable floating-point printf (`-u _printf_float`) |
+| scanf float | Enable floating-point scanf (`-u _scanf_float`) |
+| Libraries (-l) | Library names to link (`-lName`) |
+| Search Paths (-L) | Library search directories (`-L"dir"`) |
+| Extra LDFLAGS | Additional linker flags |
+| Linker Scripts | Linker script paths relative to the build directory |
 
 ---
 
@@ -486,6 +496,7 @@ Open via the **Settings** button in the HT32 toolbar. The panel has three tabs.
 
 | Setting | Description |
 |---------|-------------|
+| Output Filename | Custom output filename for the generated `.elf` / `.a` (leave empty to keep the converted name) |
 | Post-Build Command | Command to run after a successful build (working dir: `${workspaceFolder}` = `HT32_VSCode/`) |
 | GCC Path | `arm-none-eabi-gcc` path (blank = auto-detect) — machine-wide |
 | OpenOCD Path | OpenOCD path (blank = use bundled OpenOCD) — machine-wide |
@@ -565,6 +576,8 @@ After conversion or project creation, the extension auto-generates `.clangd` and
 | `HT32: Close Project` | Close the currently loaded project |
 | `HT32: Clear Recent Projects` | Clear the Recent Projects list |
 | `HT32: Refresh Stack Usage` | Manually refresh the Stack Usage Analysis panel |
+| `HT32: Update Extension (Online)` | Check the VS Code Marketplace for a newer version and install it automatically |
+| `HT32: Install Extension from VSIX` | Open a file picker to install a local `.vsix` package |
 
 ---
 

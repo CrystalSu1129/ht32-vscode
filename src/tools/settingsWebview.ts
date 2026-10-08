@@ -48,6 +48,7 @@ export type ProjectSettings = {
   printfFloat:       boolean;    // -u _printf_float (newlib-nano float printf)
   scanfFloat:        boolean;    // -u _scanf_float  (newlib-nano float scanf)
   postBuildCmd:       string;   // shell command to run after build (empty = disabled)
+  gcSections:    boolean;  // -ffunction-sections -fdata-sections -Wl,--gc-sections
   includePaths:  string[]; // all -I paths written to includes.list (converter-generated + user-added)
   cDefs?:        string[]; // C defines (without -D prefix) written to defines.list
   aDefs?:        string[]; // ASM-only defines (without -D prefix) written to adefines.list
@@ -98,6 +99,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   printfFloat:       false,
   scanfFloat:        false,
   postBuildCmd:       '',
+  gcSections:    true,
   includePaths:  [],
 };
 
@@ -186,6 +188,7 @@ export function readProjectSettings(bgDir: string): ProjectSettings {
     printfFloat:       false,
     scanfFloat:        false,
     postBuildCmd:       '',
+    gcSections:    true,
     includePaths:  [],
   };
 }
@@ -1165,6 +1168,7 @@ function collectProjectSettings(bgName) {
     scanfFloat:   !!(document.getElementById(p + 'scanfFloat')   && document.getElementById(p + 'scanfFloat').checked),
 
     postBuildCmd:       (v(p + 'postBuildCmd') || '').trim(),
+    gcSections:   !!(document.getElementById(p + 'gcSections') && document.getElementById(p + 'gcSections').checked),
     includePaths:  collectIncPaths(bgName),
     cDefs:         collectDefs(bgName, 'c'),
     aDefs:         collectDefs(bgName, 'a'),
@@ -1173,7 +1177,7 @@ function collectProjectSettings(bgName) {
 
 function switchTab(bgName, tab) {
   var p = bgName ? bgName + '__' : '';
-  ['compiler', 'debugger', 'build'].forEach(function(t) {
+  ['compiler', 'linker', 'debugger', 'build'].forEach(function(t) {
     var panel = document.getElementById(p + 'tab_' + t);
     var btn   = document.getElementById(p + 'tabBtn_' + t);
     if (panel) panel.classList.toggle('active', t === tab);
@@ -1519,6 +1523,7 @@ ${autoLoaders.map(l => `<div class="loader-row auto-row" title="${esc(l.label)}"
 ${titleHtml}
 <div class="tab-bar">
   <button class="tab-btn active" id="${p}tabBtn_compiler" onclick="switchTab('${esc(bg)}','compiler')">Compiler</button>
+  <button class="tab-btn"        id="${p}tabBtn_linker"   onclick="switchTab('${esc(bg)}','linker')">Linker</button>
   <button class="tab-btn"        id="${p}tabBtn_debugger" onclick="switchTab('${esc(bg)}','debugger')">Debugger</button>
   <button class="tab-btn"        id="${p}tabBtn_build"    onclick="switchTab('${esc(bg)}','build')">Build</button>
 </div>
@@ -1625,11 +1630,6 @@ ${availableFlms.length > 0 ? `<button class="btn-secondary add-btn" onclick="add
 <div class="tab-panel active" id="${p}tab_compiler">
 <div class="settings-group">
 <div class="row">
-  <label>Output Filename</label>
-  <input id="${id('outputName')}" type="text" value="${esc(s.outputName ?? '')}" placeholder="${defaultTargetName ? esc(defaultTargetName) + ' (current)' : 'e.g. app'}">
-  <p class="hint">Sets <code>TARGET :=</code> in the Makefile — the name of the generated <code>.elf</code> / <code>.a</code>. Leave empty to keep the original name from conversion.</p>
-</div>
-<div class="row">
   <label>Optimization Level</label>
   <select id="${id('optimizationLevel')}">
     ${opt('O0',s.optimizationLevel,'O0 — No optimization (fastest rebuild)')}
@@ -1668,39 +1668,11 @@ ${availableFlms.length > 0 ? `<button class="btn-secondary add-btn" onclick="add
   </select>
 </div>
 <div class="row">
-  <label>C Runtime Library</label>
-  <label class="checkbox-row">
-    <input type="checkbox" id="${id('useNanoSpec')}" ${s.useNano ? 'checked' : ''}>
-    Use newlib-nano (<code>--specs=nano.specs</code>)
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" id="${id('printfFloat')}" ${s.printfFloat ? 'checked' : ''}>
-    Use float with nano printf (<code>-u _printf_float</code>)
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" id="${id('scanfFloat')}" ${s.scanfFloat ? 'checked' : ''}>
-    Use float with nano scanf (<code>-u _scanf_float</code>)
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" id="${id('useNosysSpec')}" ${s.useNosys ? 'checked' : ''}>
-    Do not use syscalls (<code>--specs=nosys.specs</code>)
-  </label>
-</div>
-<div class="row">
   <label class="checkbox-row" style="font-size:var(--vscode-font-size)">
     <input type="checkbox" id="${id('useLto')}" ${s.useLto ? 'checked' : ''}>
     Link-time optimization (<code>-flto</code>)
   </label>
   <p class="hint">Adds <code>-flto</code> to CFLAGS and LDFLAGS. Reduces code size but increases build time.</p>
-</div>
-<div class="row">
-  <label>Extra Libraries</label>
-  <p class="lib-section-label" style="margin-top:0">Libraries (-l)</p>
-  <div id="${id('libNameRows')}">${libNameRowsHtml || '<p class="no-items">No -l libraries.</p>'}</div>
-  <button class="btn-secondary add-btn" style="margin-top:4px;align-self:flex-start" onclick="addLibName(${bgName ? `'${esc(bgName)}'` : "''"})">+ Add -l</button>
-  <p class="lib-section-label" style="margin-top:10px">Search Paths (-L)</p>
-  <div id="${id('libPathRows')}">${libPathRowsHtml || '<p class="no-items">No -L search paths.</p>'}</div>
-  <button class="btn-secondary add-btn" style="margin-top:4px;align-self:flex-start" onclick="addLibPath(${bgName ? `'${esc(bgName)}'` : "''"})">+ Add -L</button>
 </div>
 <div class="row">
   <label>C Defines (<code>defines.list</code>)</label>
@@ -1728,7 +1700,54 @@ ${availableFlms.length > 0 ? `<button class="btn-secondary add-btn" onclick="add
 </div>
 <div class="row">
   <label>Extra CFLAGS</label>
-  <input id="${id('extraCFlags')}" type="text" value="${esc(s.extraCFlags)}" placeholder="e.g. -flto -DDEBUG">
+  <input id="${id('extraCFlags')}" type="text" value="${esc(s.extraCFlags)}" placeholder="e.g. -std=gnu11 -DDEBUG">
+</div>
+<div class="row">
+  <p class="hint" style="margin:0;line-height:1.7">
+    <strong>Default flags always included:</strong><br>
+    CFLAGS: <code>-mcpu=… -mthumb [-mfpu=… -mfloat-abi=…] -Os -g3 [-ffunction-sections -fdata-sections] "-ffile-prefix-map=$(CURDIR)=."</code><br>
+    ASFLAGS: <code>-mcpu=… -mthumb [-mfpu=… -mfloat-abi=…] -x assembler-with-cpp "-ffile-prefix-map=$(CURDIR)=."</code>
+  </p>
+</div>
+</div>
+</div><!-- /tab_compiler -->
+
+<div class="tab-panel" id="${p}tab_linker">
+<div class="settings-group">
+<div class="row">
+  <label class="checkbox-row" style="font-size:var(--vscode-font-size)">
+    <input type="checkbox" id="${id('gcSections')}" ${s.gcSections ? 'checked' : ''}>
+    Dead code elimination (<code>-ffunction-sections -fdata-sections -Wl,--gc-sections</code>)
+  </label>
+  <p class="hint">Removes unused functions and data at link time. Disable if you encounter weak symbol or coverage tool issues.</p>
+</div>
+<div class="row">
+  <label>C Runtime Library</label>
+  <label class="checkbox-row">
+    <input type="checkbox" id="${id('useNanoSpec')}" ${s.useNano ? 'checked' : ''}>
+    Use newlib-nano (<code>--specs=nano.specs</code>)
+  </label>
+  <label class="checkbox-row">
+    <input type="checkbox" id="${id('printfFloat')}" ${s.printfFloat ? 'checked' : ''}>
+    Use float with nano printf (<code>-u _printf_float</code>)
+  </label>
+  <label class="checkbox-row">
+    <input type="checkbox" id="${id('scanfFloat')}" ${s.scanfFloat ? 'checked' : ''}>
+    Use float with nano scanf (<code>-u _scanf_float</code>)
+  </label>
+  <label class="checkbox-row">
+    <input type="checkbox" id="${id('useNosysSpec')}" ${s.useNosys ? 'checked' : ''}>
+    Do not use syscalls (<code>--specs=nosys.specs</code>)
+  </label>
+</div>
+<div class="row">
+  <label>Extra Libraries</label>
+  <p class="lib-section-label" style="margin-top:0">Libraries (-l)</p>
+  <div id="${id('libNameRows')}">${libNameRowsHtml || '<p class="no-items">No -l libraries.</p>'}</div>
+  <button class="btn-secondary add-btn" style="margin-top:4px;align-self:flex-start" onclick="addLibName(${bgName ? `'${esc(bgName)}'` : "''"})">+ Add -l</button>
+  <p class="lib-section-label" style="margin-top:10px">Search Paths (-L)</p>
+  <div id="${id('libPathRows')}">${libPathRowsHtml || '<p class="no-items">No -L search paths.</p>'}</div>
+  <button class="btn-secondary add-btn" style="margin-top:4px;align-self:flex-start" onclick="addLibPath(${bgName ? `'${esc(bgName)}'` : "''"})">+ Add -L</button>
 </div>
 <div class="row">
   <label>Extra LDFLAGS</label>
@@ -1744,18 +1763,21 @@ ${availableFlms.length > 0 ? `<button class="btn-secondary add-btn" onclick="add
 </div>
 <div class="row">
   <p class="hint" style="margin:0;line-height:1.7">
-    <strong>Default flags always included:</strong><br>
-    CFLAGS: <code>-mcpu=… -mthumb [-mfpu=… -mfloat-abi=…] -Os -g3 -ffunction-sections -fdata-sections "-ffile-prefix-map=$(CURDIR)=."</code><br>
-    ASFLAGS: <code>-mcpu=… -mthumb [-mfpu=… -mfloat-abi=…] -x assembler-with-cpp "-ffile-prefix-map=$(CURDIR)=."</code><br>
-    LDFLAGS: <code>-Wl,--gc-sections,--print-memory-usage,-Map,build/xxx.map -T GNU_ARM/linker.ld --specs=nano.specs --specs=nosys.specs -Wl,--start-group,-lm,-lc,-lgcc,-lnosys -Wl,--end-group</code>
+    <strong>Default LDFLAGS always included:</strong><br>
+    <code>[-Wl,--gc-sections,]--print-memory-usage,-Map,build/xxx.map -T linker.ld --specs=nano.specs --specs=nosys.specs -Wl,--start-group,-lm,-lc,-lgcc,-lnosys -Wl,--end-group</code>
   </p>
 </div>
 </div>
-</div><!-- /tab_compiler -->
+</div><!-- /tab_linker -->
 
 <div class="tab-panel" id="${p}tab_build">
 <div class="settings-group">
 <h2>Build</h2>
+<div class="row">
+  <label>Output Filename</label>
+  <input id="${id('outputName')}" type="text" value="${esc(s.outputName ?? '')}" placeholder="${defaultTargetName ? esc(defaultTargetName) + ' (current)' : 'e.g. app'}">
+  <p class="hint">Sets <code>TARGET :=</code> in the Makefile — the name of the generated <code>.elf</code> / <code>.a</code>. Leave empty to keep the original name from conversion.</p>
+</div>
 <div class="row">
   <label>Post-Build Command</label>
   <input id="${id('postBuildCmd')}" type="text" value="${esc(s.postBuildCmd)}" placeholder='e.g. ..\\Tools\\afterbuild_ap.bat vsc IAP_AP HT32F52352' style="font-family:monospace">
